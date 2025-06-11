@@ -40,7 +40,7 @@ services:
 
   # PostgreSQL with PostGIS for metadata tracking
   postgres:
-    image: postgis/postgis:15-3.3
+    image: postgres:15
     platform: linux/arm64/v8
     container_name: tiff-pipeline-db
     environment:

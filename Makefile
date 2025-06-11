@@ -256,27 +256,32 @@ watch-stop: ## Stop file watcher service
 	@echo "$(GREEN)✓ File watcher stopped$(NC)"
 
 # =============================================================================
-# CLEANUP
+# CLEANUP AND REBUILD
 # =============================================================================
 
 .PHONY: clean
-clean: ## Remove containers and volumes
-	@echo "$(CYAN)Cleaning up containers and volumes...$(NC)"
-	docker-compose -p $(COMPOSE_PROJECT) --profile admin --profile monitoring --profile watcher down -v
+clean: ## Remove all containers, volumes, and images
+	@echo "$(CYAN)Cleaning up Docker environment...$(NC)"
+	@echo "$(YELLOW)Stopping and removing ALL containers...$(NC)"
+	docker-compose -p $(COMPOSE_PROJECT) down -v --remove-orphans
+	@echo "$(YELLOW)Force removing any remaining containers...$(NC)"
+	docker rm -f $$(docker ps -aq) 2>/dev/null || true
+	@echo "$(YELLOW)Removing ALL volumes...$(NC)"
+	docker volume rm $$(docker volume ls -q) 2>/dev/null || true
+	@echo "$(YELLOW)Removing unused volumes...$(NC)"
+	docker volume prune -f
+	@echo "$(YELLOW)Removing unused images...$(NC)"
+	docker image prune -f
+	@echo "$(YELLOW)Removing build cache...$(NC)"
+	docker builder prune -f
+	@echo "$(YELLOW)Removing unused networks...$(NC)"
+	docker network prune -f
 	@echo "$(GREEN)✓ Cleanup completed$(NC)"
 
-.PHONY: clean-all
-clean-all: clean ## Remove everything including images
-	@echo "$(CYAN)Removing Docker images...$(NC)"
-	docker-compose -p $(COMPOSE_PROJECT) down --rmi all
-	@echo "$(GREEN)✓ Complete cleanup finished$(NC)"
-
-.PHONY: clean-logs
-clean-logs: ## Clear log files
-	@echo "$(CYAN)Clearing log files...$(NC)"
-	rm -rf logs/*
-	mkdir -p logs
-	@echo "$(GREEN)✓ Log files cleared$(NC)"
+.PHONY: fullcycle
+fullcycle: clean build up ## Complete cleanup and rebuild cycle
+	@echo "$(GREEN)✓ Full cycle completed$(NC)"
+	@echo "$(YELLOW)Check status with: make status$(NC)"
 
 # =============================================================================
 # MONITORING SHORTCUTS
@@ -357,21 +362,3 @@ version: ## Show version information
 	@if [ -f "VERSION" ]; then \
 		echo "Pipeline version: $$(cat VERSION)"; \
 	fi
-
-.PHONY: fullcycle
-fullcycle: ## Stop, remove, prune, and restart all containers, networks, and volumes for a clean production start
-	@echo "$(CYAN)Stopping all containers (production)...$(NC)"
-	docker-compose -f docker-compose.yml -f docker-compose.prod.yml down -v --remove-orphans
-	@echo "$(CYAN)Force removing any leftover containers...$(NC)"
-	docker rm -f $$(docker ps -aq) 2>/dev/null || true
-	@echo "$(CYAN)Pruning unused Docker networks...$(NC)"
-	docker network prune -f
-	@echo "$(CYAN)Pruning unused Docker volumes...$(NC)"
-	docker volume prune -f
-	@echo "$(CYAN)Pruning unused Docker images...$(NC)"
-	docker image prune -f
-	@echo "$(CYAN)Creating required host directories for Docker volumes...$(NC)"
-	mkdir -p ./data/postgres ./data/redis ./data/prometheus ./data/grafana
-	@echo "$(CYAN)Starting all containers (production)...$(NC)"
-	docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-	@echo "$(GREEN)✓ Full cycle complete: all containers restarted cleanly$(NC)"
