@@ -194,28 +194,28 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /opt/tiff-pipeline/data/postgres
+      device: ./data/postgres
   
   redis_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /opt/tiff-pipeline/data/redis
+      device: ./data/redis
   
   prometheus_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /opt/tiff-pipeline/data/prometheus
+      device: ./data/prometheus
   
   grafana_data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /opt/tiff-pipeline/data/grafana
+      device: ./data/grafana
 
 # Production networks with custom subnet
 networks:

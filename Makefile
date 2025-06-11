@@ -370,6 +370,8 @@ fullcycle: ## Stop, remove, prune, and restart all containers, networks, and vol
 	docker volume prune -f
 	@echo "$(CYAN)Pruning unused Docker images...$(NC)"
 	docker image prune -f
+	@echo "$(CYAN)Creating required host directories for Docker volumes...$(NC)"
+	mkdir -p ./data/postgres ./data/redis ./data/prometheus ./data/grafana
 	@echo "$(CYAN)Starting all containers (production)...$(NC)"
 	docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 	@echo "$(GREEN)✓ Full cycle complete: all containers restarted cleanly$(NC)"
