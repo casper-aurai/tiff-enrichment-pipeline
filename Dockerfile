@@ -1,5 +1,5 @@
 # Multi-stage build for TIFF enrichment pipeline
-FROM osgeo/gdal:ubuntu-small-3.7.2 as base
+FROM ghcr.io/osgeo/gdal:ubuntu-small-3.11.0 as base
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
