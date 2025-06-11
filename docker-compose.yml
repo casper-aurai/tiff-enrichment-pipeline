@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Main TIFF enrichment pipeline
   tiff-pipeline:
