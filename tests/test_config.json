@@ -1,0 +1,66 @@
+{
+    "quality_control": {
+        "generate_histograms": true,
+        "validate_dimensions": true,
+        "validate_reflectance_range": true,
+        "min_dimension": 100,
+        "max_dimension": 10000,
+        "min_reflectance": 0.0,
+        "max_reflectance": 1.0,
+        "max_zero_ratio": 0.5
+    },
+    "vegetation_indices": {
+        "ndvi": true,
+        "ndre": true,
+        "gndvi": true,
+        "savi": true,
+        "msavi": true,
+        "evi": true
+    },
+    "output": {
+        "directory": "test_output",
+        "save_individual_bands": true,
+        "generate_thumbnails": true,
+        "generate_visualizations": true,
+        "thumbnail_size": [500, 500],
+        "visualization_dpi": 300
+    },
+    "processing": {
+        "max_workers": 2,
+        "batch_size": 1,
+        "alignment_method": "affine",
+        "calibration_factor": 0.0001
+    },
+    "logging": {
+        "level": "INFO",
+        "file": "test.log",
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    },
+    "band_config": {
+        "Blue": {
+            "name": "Blue",
+            "center_wavelength": 475,
+            "bandwidth": 32
+        },
+        "Green": {
+            "name": "Green",
+            "center_wavelength": 560,
+            "bandwidth": 27
+        },
+        "Red": {
+            "name": "Red",
+            "center_wavelength": 668,
+            "bandwidth": 14
+        },
+        "NIR": {
+            "name": "NIR",
+            "center_wavelength": 840,
+            "bandwidth": 40
+        },
+        "RedEdge": {
+            "name": "RedEdge",
+            "center_wavelength": 717,
+            "bandwidth": 12
+        }
+    }
+} 

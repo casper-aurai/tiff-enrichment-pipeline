@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  tiff-pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - MAX_WORKERS=2
+      - PROCESSING_BATCH_SIZE=1
+    volumes:
+      - .:/app
+      - ./data:/app/data
+      - ./logs:/app/logs
+    command: >
+      bash -c "
+        pip install -r requirements.txt &&
+        python -m unittest tests/test_micasense_processor.py -v
+      "
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data
+
+networks:
+  default:
+    name: pipeline-network 
