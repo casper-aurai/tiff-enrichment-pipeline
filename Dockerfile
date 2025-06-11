@@ -1,6 +1,5 @@
-# This Dockerfile is used for both development and production builds.
-# Multi-stage build for TIFF enrichment pipeline
-FROM osgeo/gdal:ubuntu-small-3.6.3
+# Build stage
+FROM osgeo/gdal:ubuntu-small-3.6.3 AS builder
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
@@ -10,12 +9,7 @@ ENV PYTHONUNBUFFERED=1 \
     RASTERIO_VERSION=1.3.8 \
     DEBIAN_FRONTEND=noninteractive
 
-# Create non-root user
-RUN useradd -m -s /bin/bash pipeline && \
-    mkdir -p /app && \
-    chown -R pipeline:pipeline /app
-
-# Install system dependencies
+# Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     python3-dev \
@@ -45,21 +39,41 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     curl \
     unzip \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # Set up Python virtual environment
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python dependencies
-COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
-    rm /tmp/requirements.txt
+# Install Python dependencies with caching
+COPY requirements/base.txt requirements/dev.txt requirements/prod.txt /tmp/requirements/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir -r /tmp/requirements/base.txt && \
+    if [ "$ENVIRONMENT" = "development" ]; then \
+        pip install --no-cache-dir -r /tmp/requirements/dev.txt; \
+    elif [ "$ENVIRONMENT" = "production" ]; then \
+        pip install --no-cache-dir -r /tmp/requirements/prod.txt; \
+    fi && \
+    rm -rf /tmp/requirements
 
-# Create necessary directories with proper permissions
-RUN mkdir -p /data/input /data/output /app/logs && \
-    chown -R pipeline:pipeline /data /app/logs && \
-    chmod -R 755 /data /app/logs
+# Final stage
+FROM osgeo/gdal:ubuntu-small-3.6.3
+
+# Copy only runtime dependencies
+COPY --from=builder /opt/venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Create non-root user and directories
+RUN useradd -m -s /bin/bash pipeline && \
+    mkdir -p /data/input /data/output /app/logs /tmp/rasterio_locks && \
+    chown -R pipeline:pipeline /data /app/logs /tmp/rasterio_locks && \
+    chmod -R 755 /data /app/logs /tmp/rasterio_locks && \
+    # Clean up
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    rm -rf /tmp/* && \
+    rm -rf /var/tmp/*
 
 # Copy application code
 WORKDIR /app
