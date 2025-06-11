@@ -1,87 +1,70 @@
-# Core geospatial libraries (updated for Python 3.12 compatibility)
-GDAL==3.8.4
-rasterio==1.3.9
-fiona==1.9.5
-geopandas==0.14.3
-shapely==2.0.2
-pyproj==3.6.1
+# Core geospatial libraries - using system packages where possible
+# GDAL, rasterio, fiona, geopandas, shapely, pyproj will be from system packages
 
-# Data processing
-numpy==1.26.4
-pandas==2.2.1
-scipy==1.12.0
-scikit-image==0.22.0
+# Data processing (compatible versions)
+numpy>=1.21.0
+pandas>=1.4.0
+scipy>=1.8.0
+scikit-image>=0.19.0
 
 # Web APIs and HTTP
 requests==2.31.0
-httpx==0.27.0
-aiohttp==3.9.3
-tenacity==8.2.3
+httpx>=0.24.0
+aiohttp>=3.8.0
+tenacity>=8.2.0
 
 # Database connectivity
 psycopg2-binary==2.9.9
-SQLAlchemy==2.0.28
-alembic==1.13.1
-GeoAlchemy2==0.14.7
+SQLAlchemy>=2.0.0
+alembic>=1.11.0
+GeoAlchemy2>=0.14.0
 
 # Caching
-redis==5.0.3
-cachetools==5.3.3
+redis>=4.6.0
+cachetools>=5.3.0
 
 # Configuration and environment
-python-dotenv==1.0.1
-pydantic==2.6.4
-pydantic-settings==2.2.1
-PyYAML==6.0.1
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+PyYAML>=6.0
 
 # Async processing and concurrency
-dask[complete]==2024.3.0
-celery==5.3.6
-asyncio-throttle==1.0.2
+dask[complete]>=2023.7.0
+celery>=5.3.0
 
 # File handling and utilities
-pathlib2==2.3.7
-watchdog==4.0.0
-python-magic==0.4.27
+watchdog>=3.0.0
+python-magic>=0.4.27
 
 # Logging and monitoring
-structlog==24.1.0
-prometheus-client==0.20.0
-sentry-sdk==1.44.1
+structlog>=23.1.0
+prometheus-client>=0.17.0
+sentry-sdk>=1.29.0
 
 # Testing
-pytest==8.1.1
-pytest-cov==4.0.0
-pytest-asyncio==0.23.5
-pytest-mock==3.12.0
-factory-boy==3.3.0
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.21.0
+pytest-mock>=3.11.0
 
 # Code quality
-black==24.3.0
-flake8==7.0.0
-isort==5.13.2
-mypy==1.9.0
+black>=23.7.0
+flake8>=6.0.0
+isort>=5.12.0
 
 # Image processing enhancements
-Pillow==10.2.0
-opencv-python-headless==4.9.0.80
+Pillow>=10.0.0
+opencv-python-headless>=4.8.0
 
 # CLI and utilities
-click==8.1.7
-tqdm==4.66.2
-rich==13.7.1
+click>=8.1.0
+tqdm>=4.65.0
+rich>=13.5.0
 
 # Serialization
-jsonschema==4.21.1
-marshmallow==3.21.1
+jsonschema>=4.18.0
+marshmallow>=3.20.0
 
 # Notifications
-slack-sdk==3.27.1
-
-# Documentation
-sphinx==7.2.6
-sphinx-rtd-theme==2.0.0
-
-# Development tools
-pre-commit==3.6.2
-bandit==1.7.8
+slack-sdk>=3.21.0
