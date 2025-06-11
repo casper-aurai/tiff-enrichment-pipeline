@@ -1,0 +1,47 @@
+# Container Registry Configuration
+REGISTRY_GHCR := ghcr.io/casper-aurai/tiff-enrichment-pipeline
+REGISTRY_DOCKERHUB := casper-aurai/tiff-enrichment-pipeline
+IMAGE_TAG := latest
+
+# =============================================================================
+# PUBLISHED IMAGE OPERATIONS
+# =============================================================================
+
+.PHONY: pull
+pull: ## Pull latest published images from GitHub Container Registry
+	@echo "$(CYAN)Pulling latest images from GHCR...$(NC)"
+	docker pull $(REGISTRY_GHCR):$(IMAGE_TAG)
+	@echo "$(GREEN)✓ Images pulled successfully$(NC)"
+
+.PHONY: pull-dockerhub
+pull-dockerhub: ## Pull latest published images from Docker Hub
+	@echo "$(CYAN)Pulling latest images from Docker Hub...$(NC)"
+	docker pull $(REGISTRY_DOCKERHUB):$(IMAGE_TAG)
+	@echo "$(GREEN)✓ Images pulled successfully$(NC)"
+
+.PHONY: up-published
+up-published: check-env ## Start pipeline using published images from GHCR
+	@echo "$(CYAN)Starting TIFF Pipeline with published images...$(NC)"
+	docker-compose -f docker-compose.yml -f docker-compose.published.yml -p $(COMPOSE_PROJECT) up -d
+	@echo "$(GREEN)✓ Pipeline started with published images$(NC)"
+	@echo "$(YELLOW)Check status with: make status$(NC)"
+
+.PHONY: up-published-dockerhub
+up-published-dockerhub: check-env ## Start pipeline using published images from Docker Hub
+	@echo "$(CYAN)Starting TIFF Pipeline with Docker Hub images...$(NC)"
+	sed 's|ghcr.io/casper-aurai/tiff-enrichment-pipeline|casper-aurai/tiff-enrichment-pipeline|g' docker-compose.published.yml > docker-compose.dockerhub.yml
+	docker-compose -f docker-compose.yml -f docker-compose.dockerhub.yml -p $(COMPOSE_PROJECT) up -d
+	@echo "$(GREEN)✓ Pipeline started with Docker Hub images$(NC)"
+	@echo "$(YELLOW)Check status with: make status$(NC)"
+
+.PHONY: up-published-full
+up-published-full: check-env ## Start pipeline with admin tools using published images
+	@echo "$(CYAN)Starting TIFF Pipeline with admin tools (published images)...$(NC)"
+	docker-compose -f docker-compose.yml -f docker-compose.published.yml -p $(COMPOSE_PROJECT) --profile admin up -d
+	@echo "$(GREEN)✓ Pipeline with admin tools started$(NC)"
+
+.PHONY: up-published-all
+up-published-all: check-env ## Start all services using published images
+	@echo "$(CYAN)Starting all TIFF Pipeline services (published images)...$(NC)"
+	docker-compose -f docker-compose.yml -f docker-compose.published.yml -p $(COMPOSE_PROJECT) --profile admin --profile monitoring --profile watcher up -d
+	@echo "$(GREEN)✓ All services started with published images$(NC)"
