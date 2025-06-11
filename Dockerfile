@@ -40,7 +40,7 @@ RUN groupadd -r pipeline && \
 WORKDIR /app
 
 # Create and activate virtual environment
-RUN python3 -m venv /app/venv --system-site-packages
+RUN python3 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 
 # Copy requirements first for better caching
