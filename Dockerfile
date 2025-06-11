@@ -1,7 +1,7 @@
 # Multi-stage build for TIFF enrichment pipeline
 FROM ghcr.io/osgeo/gdal:ubuntu-small-3.11.0 as base
 
-# Install system dependencies
+# Install system dependencies including Python geospatial packages
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
@@ -13,6 +13,14 @@ RUN apt-get update && apt-get install -y \
     libgeos-dev \
     curl \
     postgresql-client \
+    # Additional system packages for geospatial libraries
+    python3-gdal \
+    python3-numpy \
+    python3-pandas \
+    python3-shapely \
+    python3-fiona \
+    python3-rasterio \
+    python3-geopandas \
     && rm -rf /var/lib/apt/lists/*
 
 # Set GDAL environment variables
@@ -32,8 +40,11 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies (use --break-system-packages for Docker environment)
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+# Install Python dependencies (use system packages where possible, then pip for the rest)
+RUN pip3 install --no-cache-dir --break-system-packages \
+    --find-links /usr/lib/python3/dist-packages \
+    --prefer-binary \
+    -r requirements.txt
 
 # Copy application code
 COPY src/ ./src/
