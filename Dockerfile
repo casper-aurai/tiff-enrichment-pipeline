@@ -20,8 +20,9 @@ ENV GDAL_CONFIG=/usr/bin/gdal-config
 ENV CPLUS_INCLUDE_PATH=/usr/include/gdal
 ENV C_INCLUDE_PATH=/usr/include/gdal
 
-# Create application user
-RUN useradd -m -u 1000 pipeline && \
+# Create application user (use different UID to avoid conflicts)
+RUN groupadd -r pipeline && \
+    useradd -r -g pipeline -u 1001 pipeline && \
     mkdir -p /app /data/input /data/output /data/failed && \
     chown -R pipeline:pipeline /app /data
 
