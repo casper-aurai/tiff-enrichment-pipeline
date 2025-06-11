@@ -9,7 +9,13 @@ def check_database_connection() -> Dict[str, Any]:
     """Check PostgreSQL database connection."""
     try:
         import psycopg2
-        db_url = os.getenv('DATABASE_URL', 'postgresql://pipeline:password@postgres:5432/tiff_pipeline')
+        db_name = os.getenv('POSTGRES_DB', 'pipeline')
+        db_user = os.getenv('POSTGRES_USER', 'pipeline')
+        db_password = os.getenv('POSTGRES_PASSWORD', 'pipeline')
+        db_host = os.getenv('POSTGRES_HOST', 'postgres')
+        db_port = os.getenv('POSTGRES_PORT', '5432')
+        
+        db_url = f'postgresql://{db_user}:{db_password}@{db_host}:{db_port}/{db_name}'
         conn = psycopg2.connect(db_url)
         cursor = conn.cursor()
         cursor.execute('SELECT 1')

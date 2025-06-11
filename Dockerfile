@@ -40,6 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     curl \
     unzip \
+    exiftool \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
@@ -76,6 +77,27 @@ RUN useradd -m -s /bin/bash pipeline && \
     build-essential \
     python3-dev \
     gcc \
+    libgdal-dev \
+    gdal-bin \
+    libspatialindex-dev \
+    libgeos-dev \
+    libproj-dev \
+    libhdf5-dev \
+    libnetcdf-dev \
+    libgrib2c-dev \
+    libopenjp2-7-dev \
+    libtiff5-dev \
+    libwebp-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libopenexr-dev \
+    libspatialite-dev \
+    libsqlite3-dev \
+    libpq-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libffi-dev \
+    exiftool \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean && \
     rm -rf /tmp/* && \

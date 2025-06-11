@@ -11,6 +11,8 @@ from datetime import datetime
 import json
 import traceback
 from concurrent.futures import ProcessPoolExecutor
+import rasterio
+import rasterio.warp
 
 from pipeline.utils.rasterio_utils import RasterioManager
 from .errors import (

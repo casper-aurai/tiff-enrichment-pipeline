@@ -26,32 +26,36 @@ class MicaSenseValidator:
         """Extract EXIF metadata from TIFF file"""
         metadata = {}
         try:
-            with open(file_path, 'rb') as image_file:
-                exif_image = Image(image_file)
-                
-                # Extract DateTime
-                if hasattr(exif_image, 'datetime'):
-                    metadata['DateTime'] = exif_image.datetime
-                elif hasattr(exif_image, 'datetime_original'):
-                    metadata['DateTime'] = exif_image.datetime_original
-                
-                # Extract CameraModel
-                if hasattr(exif_image, 'model'):
-                    metadata['CameraModel'] = exif_image.model
-                
-                # Extract GPS information
-                if hasattr(exif_image, 'gps_latitude') and hasattr(exif_image, 'gps_longitude'):
-                    metadata['GPSLatitude'] = exif_image.gps_latitude
-                    metadata['GPSLongitude'] = exif_image.gps_longitude
-                
-                # Extract other relevant metadata
-                for tag in ['make', 'software', 'exposure_time', 'f_number', 'iso_speed']:
-                    if hasattr(exif_image, tag):
-                        metadata[tag] = getattr(exif_image, tag)
-        
+            if file_path.suffix.lower() in ['.tif', '.tiff']:
+                # Use Pillow for TIFFs
+                from PIL import Image as PILImage
+                from PIL.TiffTags import TAGS
+                with PILImage.open(file_path) as img:
+                    for tag, value in img.tag_v2.items():
+                        tag_name = TAGS.get(tag, tag)
+                        metadata[tag_name] = value
+            else:
+                # Use exif library for other formats (e.g., JPEG)
+                with open(file_path, 'rb') as image_file:
+                    exif_image = Image(image_file)
+                    # Extract DateTime
+                    if hasattr(exif_image, 'datetime'):
+                        metadata['DateTime'] = exif_image.datetime
+                    elif hasattr(exif_image, 'datetime_original'):
+                        metadata['DateTime'] = exif_image.datetime_original
+                    # Extract CameraModel
+                    if hasattr(exif_image, 'model'):
+                        metadata['CameraModel'] = exif_image.model
+                    # Extract GPS information
+                    if hasattr(exif_image, 'gps_latitude') and hasattr(exif_image, 'gps_longitude'):
+                        metadata['GPSLatitude'] = exif_image.gps_latitude
+                        metadata['GPSLongitude'] = exif_image.gps_longitude
+                    # Extract other relevant metadata
+                    for tag in ['make', 'software', 'exposure_time', 'f_number', 'iso_speed']:
+                        if hasattr(exif_image, tag):
+                            metadata[tag] = getattr(exif_image, tag)
         except Exception as e:
             self.logger.warning(f"Failed to extract EXIF metadata from {file_path}: {str(e)}")
-        
         return metadata
     
     def validate_tiff_file(self, file_path: Path) -> List[str]:
