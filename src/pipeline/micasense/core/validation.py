@@ -9,6 +9,7 @@ from typing import Dict, List, Any
 import rasterio
 from rasterio.errors import RasterioIOError
 import numpy as np
+from exif import Image
 from datetime import datetime
 import re
 
@@ -21,18 +22,37 @@ class MicaSenseValidator:
         self.config = config
         self.logger = logger
     
-    def _extract_datetime_from_filename(self, filename: str) -> str:
-        """Extract datetime from MicaSense filename (IMG_XXXX format)"""
-        # Try to extract capture number from filename
-        match = re.match(r'^IMG_(\d{4})', filename)
-        if match:
-            capture_num = int(match.group(1))
-            # Use capture number to generate a timestamp
-            # This is a fallback - in production you'd want to use actual capture time
-            base_time = datetime(2025, 1, 1)  # Use a base date
-            capture_time = base_time.replace(hour=capture_num // 100, minute=capture_num % 100)
-            return capture_time.strftime('%Y:%m:%d %H:%M:%S')
-        return datetime.now().strftime('%Y:%m:%d %H:%M:%S')
+    def _extract_exif_metadata(self, file_path: Path) -> Dict[str, Any]:
+        """Extract EXIF metadata from TIFF file"""
+        metadata = {}
+        try:
+            with open(file_path, 'rb') as image_file:
+                exif_image = Image(image_file)
+                
+                # Extract DateTime
+                if hasattr(exif_image, 'datetime'):
+                    metadata['DateTime'] = exif_image.datetime
+                elif hasattr(exif_image, 'datetime_original'):
+                    metadata['DateTime'] = exif_image.datetime_original
+                
+                # Extract CameraModel
+                if hasattr(exif_image, 'model'):
+                    metadata['CameraModel'] = exif_image.model
+                
+                # Extract GPS information
+                if hasattr(exif_image, 'gps_latitude') and hasattr(exif_image, 'gps_longitude'):
+                    metadata['GPSLatitude'] = exif_image.gps_latitude
+                    metadata['GPSLongitude'] = exif_image.gps_longitude
+                
+                # Extract other relevant metadata
+                for tag in ['make', 'software', 'exposure_time', 'f_number', 'iso_speed']:
+                    if hasattr(exif_image, tag):
+                        metadata[tag] = getattr(exif_image, tag)
+        
+        except Exception as e:
+            self.logger.warning(f"Failed to extract EXIF metadata from {file_path}: {str(e)}")
+        
+        return metadata
     
     def validate_tiff_file(self, file_path: Path) -> List[str]:
         """Validate a single TIFF file"""
@@ -45,6 +65,9 @@ class MicaSenseValidator:
                 issues.append("Empty file")
             elif size < 1024:  # Less than 1KB
                 issues.append("Suspiciously small file")
+            
+            # Extract EXIF metadata
+            exif_metadata = self._extract_exif_metadata(file_path)
             
             # Try to open with rasterio
             with rasterio.open(file_path) as src:
@@ -68,22 +91,17 @@ class MicaSenseValidator:
                 if zero_ratio > self.config['validation']['max_zero_ratio']:
                     issues.append(f"High zero ratio: {zero_ratio:.1%}")
                 
-                # Check for metadata
-                tags = src.tags()
-                
-                # Handle DateTime metadata
-                if 'DateTime' not in tags:
-                    # Extract DateTime from filename
-                    datetime_str = self._extract_datetime_from_filename(file_path.name)
-                    # Add DateTime to tags
-                    tags['DateTime'] = datetime_str
-                    self.logger.info(f"Added DateTime metadata from filename: {datetime_str}")
+                # Check required metadata
+                for tag in self.config['validation']['required_metadata']:
+                    if tag not in exif_metadata and tag not in src.tags():
+                        issues.append(f"Missing required metadata: {tag}")
                 
                 # Check known metadata if present
                 known_metadata = self.config['validation'].get('known_metadata', {})
                 for tag, expected_value in known_metadata.items():
-                    if tag in tags and tags[tag] != expected_value:
-                        issues.append(f"Unexpected {tag} value: {tags[tag]} (expected {expected_value})")
+                    actual_value = exif_metadata.get(tag) or src.tags().get(tag)
+                    if actual_value and actual_value != expected_value:
+                        issues.append(f"Unexpected {tag} value: {actual_value} (expected {expected_value})")
             
         except RasterioIOError as e:
             issues.append(f"Failed to open file: {str(e)}")

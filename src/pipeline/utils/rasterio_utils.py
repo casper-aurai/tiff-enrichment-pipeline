@@ -74,10 +74,21 @@ class RasterioManager:
         lock_path = file_path.with_suffix('.lock')
         
         try:
-            with FileLock(lock_path):
+            # For read-only mode, skip file locking
+            if mode == 'r':
                 with rasterio.open(file_path, mode) as src:
                     self.metrics.record_memory_usage('file_open')
                     yield src
+            else:
+                # For write mode, try to use a temporary directory for locks
+                temp_dir = Path('/tmp/rasterio_locks')
+                temp_dir.mkdir(exist_ok=True)
+                lock_path = temp_dir / f"{file_path.name}.lock"
+                
+                with FileLock(lock_path):
+                    with rasterio.open(file_path, mode) as src:
+                        self.metrics.record_memory_usage('file_open')
+                        yield src
         except RasterioIOError as e:
             self.metrics.record_error('file_open')
             logger.error(f"Failed to open file {file_path}: {e}")

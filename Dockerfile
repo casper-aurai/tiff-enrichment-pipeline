@@ -56,6 +56,11 @@ COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt && \
     rm /tmp/requirements.txt
 
+# Create necessary directories with proper permissions
+RUN mkdir -p /data/input /data/output /app/logs && \
+    chown -R pipeline:pipeline /data /app/logs && \
+    chmod -R 755 /data /app/logs
+
 # Copy application code
 WORKDIR /app
 COPY --chown=pipeline:pipeline . .
