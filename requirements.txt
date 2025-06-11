@@ -114,7 +114,7 @@ toml==0.10.2
 click==8.1.7
 asyncio==3.4.3
 aiofiles==23.1.0
-concurrent-futures==3.0.5
+# concurrent-futures==3.0.5
 tifffile==2023.7.10
 pillow==10.0.0
 py7zr==0.20.5

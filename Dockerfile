@@ -21,22 +21,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     python3-pip \
     python3-venv \
-    libgdal-dev=3.6.3* \
-    gdal-bin=3.6.3* \
+    libgdal-dev \
+    gdal-bin \
     libspatialindex-dev \
     libgeos-dev \
     libproj-dev \
     libhdf5-dev \
     libnetcdf-dev \
     libgrib2c-dev \
-    libjasper-dev \
     libopenjp2-7-dev \
     libtiff5-dev \
     libwebp-dev \
     libpng-dev \
     libjpeg-dev \
     libopenexr-dev \
-    libgdal-dev \
     libspatialite-dev \
     libsqlite3-dev \
     libpq-dev \
