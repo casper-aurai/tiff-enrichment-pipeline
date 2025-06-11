@@ -16,7 +16,7 @@ from datetime import datetime
 # Add src to Python path
 sys.path.append('/app/src')
 
-from pipeline.micasense_processor import MicaSenseProcessor
+from pipeline.micasense.core.processor import MicaSenseProcessor
 from pipeline.health import health_check
 
 # Setup logging

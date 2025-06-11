@@ -1,6 +1,7 @@
 # Core geospatial libraries - using system packages where possible
 # GDAL, rasterio, fiona, geopandas, shapely, pyproj will be from system packages
-rasterio>=1.3.0
+rasterio==1.3.8
+GDAL==3.6.3
 matplotlib>=3.5.0
 
 # Data processing (compatible versions)

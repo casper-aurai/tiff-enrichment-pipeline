@@ -7,7 +7,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    GDAL_VERSION=3.6.3
+    GDAL_VERSION=3.6.3 \
+    RASTERIO_VERSION=1.3.8
 
 # Create non-root user
 RUN useradd -m -s /bin/bash pipeline
@@ -23,6 +24,8 @@ RUN apt-get update && \
     build-essential \
     g++ \
     gcc \
+    libgdal-dev=3.6.3* \
+    gdal-bin=3.6.3* \
     && rm -rf /var/lib/apt/lists/*
 
 # Create virtual environment
@@ -35,10 +38,10 @@ COPY --chown=pipeline:pipeline requirements.txt .
 # Install Python dependencies in virtual environment
 RUN . /app/venv/bin/activate && \
     pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
-    --find-links /usr/lib/python3/dist-packages \
-    --prefer-binary \
-    -r requirements.txt
+    pip install --no-cache-dir numpy && \
+    pip install --no-cache-dir GDAL==${GDAL_VERSION} && \
+    pip install --no-cache-dir rasterio==${RASTERIO_VERSION} && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY --chown=pipeline:pipeline src/ ./src/
