@@ -3,7 +3,7 @@
 
 # Testing and Quality Assurance
 pytest==7.4.0
-pytest-cov==4.1.0
+pytest-cov==6.1.1
 pytest-asyncio==0.21.1
 pytest-benchmark==4.0.0
 pytest-mock==3.11.1
