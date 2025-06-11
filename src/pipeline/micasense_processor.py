@@ -501,6 +501,14 @@ class MicaSenseProcessor:
                 
             result["aligned_path"] = aligned_path
             
+            # Save individual bands if enabled
+            if self.config['output_options']['save_individual_bands']:
+                self._save_individual_bands(aligned_path, image_set)
+            
+            # Generate thumbnail if enabled
+            if self.config['output_options']['generate_thumbnails']:
+                self._generate_thumbnail(aligned_path, image_set)
+            
             # Calculate vegetation indices
             indices_paths = self.calculate_vegetation_indices(aligned_path, image_set)
             result["indices_paths"] = indices_paths
@@ -518,6 +526,70 @@ class MicaSenseProcessor:
             self.logger.error(f"Failed to process {image_set['name']}: {e}")
             
         return result
+    
+    def _save_individual_bands(self, aligned_path: str, image_set: Dict):
+        """Save individual bands from aligned multispectral image"""
+        try:
+            with rasterio.open(aligned_path) as src:
+                for band_num in range(1, src.count + 1):
+                    band_name = self.BAND_CONFIG[band_num]["name"]
+                    output_path = self.output_dir / "individual_bands" / f"{image_set['name']}_{band_name}.tif"
+                    
+                    # Read band data
+                    data = src.read(band_num)
+                    
+                    # Create output profile
+                    profile = src.profile.copy()
+                    profile.update({
+                        'count': 1,
+                        'dtype': 'float32'
+                    })
+                    
+                    # Save band
+                    with rasterio.open(output_path, 'w', **profile) as dst:
+                        dst.write(data, 1)
+                        dst.set_band_description(1, band_name)
+            
+            self.logger.info(f"Saved individual bands for {image_set['name']}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save individual bands for {image_set['name']}: {e}")
+    
+    def _generate_thumbnail(self, aligned_path: str, image_set: Dict):
+        """Generate RGB thumbnail from aligned multispectral image"""
+        try:
+            import matplotlib.pyplot as plt
+            
+            with rasterio.open(aligned_path) as src:
+                # Read RGB bands (2=Green, 3=Red, 4=NIR)
+                green = src.read(2)
+                red = src.read(3)
+                nir = src.read(4)
+                
+                # Create RGB composite
+                rgb = np.zeros((src.height, src.width, 3), dtype=np.float32)
+                rgb[..., 0] = red / 65535.0  # Red channel
+                rgb[..., 1] = green / 65535.0  # Green channel
+                rgb[..., 2] = nir / 65535.0  # Blue channel (using NIR for false color)
+                
+                # Clip to valid range
+                rgb = np.clip(rgb, 0, 1)
+                
+                # Create thumbnail
+                plt.figure(figsize=(10, 10))
+                plt.imshow(rgb)
+                plt.title(f"RGB Thumbnail - {image_set['name']}")
+                plt.axis('off')
+                
+                # Save thumbnail
+                thumb_path = self.output_dir / "thumbnails" / f"{image_set['name']}_thumbnail.png"
+                plt.savefig(thumb_path, bbox_inches='tight', pad_inches=0)
+                plt.close()
+            
+            self.logger.info(f"Generated thumbnail for {image_set['name']}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate thumbnail for {image_set['name']}: {e}")
     
     def process_all(self) -> Dict:
         """
