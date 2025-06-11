@@ -357,3 +357,19 @@ version: ## Show version information
 	@if [ -f "VERSION" ]; then \
 		echo "Pipeline version: $$(cat VERSION)"; \
 	fi
+
+.PHONY: fullcycle
+fullcycle: ## Stop, remove, prune, and restart all containers, networks, and volumes for a clean production start
+	@echo "$(CYAN)Stopping all containers (production)...$(NC)"
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml down -v --remove-orphans
+	@echo "$(CYAN)Force removing any leftover containers...$(NC)"
+	docker rm -f $$(docker ps -aq) 2>/dev/null || true
+	@echo "$(CYAN)Pruning unused Docker networks...$(NC)"
+	docker network prune -f
+	@echo "$(CYAN)Pruning unused Docker volumes...$(NC)"
+	docker volume prune -f
+	@echo "$(CYAN)Pruning unused Docker images...$(NC)"
+	docker image prune -f
+	@echo "$(CYAN)Starting all containers (production)...$(NC)"
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+	@echo "$(GREEN)✓ Full cycle complete: all containers restarted cleanly$(NC)"
