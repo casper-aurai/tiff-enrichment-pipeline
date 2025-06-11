@@ -12,6 +12,7 @@ import numpy as np
 from exif import Image
 from datetime import datetime
 import re
+import subprocess
 
 from .errors import ValidationError
 
@@ -59,9 +60,8 @@ class MicaSenseValidator:
         return metadata
     
     def validate_tiff_file(self, file_path: Path) -> List[str]:
-        """Validate a single TIFF file"""
+        """Validate a single TIFF file, assign CRS if GPS is present and CRS is missing"""
         issues = []
-        
         try:
             # Check file size
             size = file_path.stat().st_size
@@ -69,7 +69,32 @@ class MicaSenseValidator:
                 issues.append("Empty file")
             elif size < 1024:  # Less than 1KB
                 issues.append("Suspiciously small file")
-            
+
+            # --- CRS assignment step ---
+            try:
+                with rasterio.open(file_path, 'r+') as src:
+                    if not src.crs:
+                        # Use exiftool to extract GPS
+                        cmd = [
+                            'exiftool', '-gps:all', str(file_path)
+                        ]
+                        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                        lat, lon = None, None
+                        for line in proc.stdout.splitlines():
+                            if 'GPS Latitude' in line and 'Ref' not in line:
+                                lat = line.split(':', 1)[1].strip()
+                            if 'GPS Longitude' in line and 'Ref' not in line:
+                                lon = line.split(':', 1)[1].strip()
+                        if lat and lon:
+                            # Assign WGS84
+                            src.crs = 'EPSG:4326'
+                            self.logger.info(f"Assigned CRS EPSG:4326 to {file_path} based on GPS: {lat}, {lon}")
+                        else:
+                            self.logger.warning(f"No GPS found for {file_path}, cannot assign CRS.")
+            except Exception as e:
+                self.logger.warning(f"CRS assignment failed for {file_path}: {e}")
+            # --- End CRS assignment step ---
+
             # Extract EXIF metadata
             exif_metadata = self._extract_exif_metadata(file_path)
             

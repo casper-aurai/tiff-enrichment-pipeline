@@ -52,19 +52,24 @@ def main():
     parser.add_argument("--output-dir", help="Output directory")
     args = parser.parse_args()
     
+    # Set default output directory
+    output_dir = Path(args.output_dir) if args.output_dir else Path("/data/output/micasense")
+    
     # Load configuration
     config = load_config(args.config)
-    if args.output_dir:
-        config['output']['directory'] = args.output_dir
+    config['output'] = config.get('output', {})
+    config['output']['directory'] = str(output_dir)
     validate_config(config)
     
     # Setup logging
+    log_path = output_dir / "processing.log"
+    output_dir.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level=getattr(logging, config['logging']['level'].upper()),
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(),
-            logging.FileHandler(config['logging']['file'])
+            logging.FileHandler(log_path)
         ]
     )
     
@@ -77,15 +82,26 @@ def main():
         return
     
     # Process images
-    processor = MicaSenseProcessor(config)
+    processor = MicaSenseProcessor(config, output_dir)
     results = processor.process_all(image_sets)
     
-    # Print summary
+    # Print and write summary
     success_count = sum(1 for r in results if r["status"] == "success")
     print(f"\nProcessing complete:")
     print(f"Total sets: {len(results)}")
     print(f"Successful: {success_count}")
     print(f"Failed: {len(results) - success_count}")
+    # Write summary JSON to both locations
+    summary = {
+        "total_sets": len(results),
+        "successful": success_count,
+        "failed": len(results) - success_count,
+        "results": results
+    }
+    with open(output_dir / "processing_summary.json", "w") as f:
+        json.dump(summary, f, indent=2)
+    with open(Path("/data/output/processing_summary.json"), "w") as f:
+        json.dump(summary, f, indent=2)
 
 if __name__ == "__main__":
     main() 

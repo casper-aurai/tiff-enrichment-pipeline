@@ -13,6 +13,7 @@ env:
   REGISTRY_DOCKERHUB: docker.io
   # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
+  COMPOSE_BAKE: true
 
 jobs:
   build-and-push:
