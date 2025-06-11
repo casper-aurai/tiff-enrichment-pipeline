@@ -1,0 +1,15 @@
+# Docker Compose override to use published images instead of building locally
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.published.yml up -d
+
+services:
+  # Use published image instead of building locally
+  tiff-pipeline:
+    build: null  # Override build directive
+    image: ghcr.io/casper-aurai/tiff-enrichment-pipeline:latest
+    # All other configuration remains the same
+
+  # Use published image for file watcher too
+  file-watcher:
+    build: null  # Override build directive
+    image: ghcr.io/casper-aurai/tiff-enrichment-pipeline:latest
+    # All other configuration remains the same
