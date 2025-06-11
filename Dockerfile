@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-dev \
+    python3-venv \
     build-essential \
     libgdal-dev \
     libspatialindex-dev \
@@ -37,11 +38,16 @@ RUN groupadd -r pipeline && \
 # Set working directory
 WORKDIR /app
 
+# Create and activate virtual environment
+RUN python3 -m venv /app/venv --system-site-packages
+ENV PATH="/app/venv/bin:$PATH"
+
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies (use system packages where possible, then pip for the rest)
-RUN pip3 install --no-cache-dir --break-system-packages \
+# Install Python dependencies in virtual environment
+RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir \
     --find-links /usr/lib/python3/dist-packages \
     --prefer-binary \
     -r requirements.txt
