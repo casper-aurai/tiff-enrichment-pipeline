@@ -381,6 +381,97 @@ class MicaSenseProcessor:
             
         return indices_paths
     
+    def validate_bands(self, image_set: Dict) -> bool:
+        """
+        Validate image set quality and completeness
+        """
+        try:
+            # Check if all bands exist and are readable
+            for band_num, band_path in image_set["bands"].items():
+                with rasterio.open(band_path) as src:
+                    # Check image dimensions
+                    if src.width < 100 or src.height < 100:
+                        self.logger.warning(f"Band {band_num} dimensions too small: {src.width}x{src.height}")
+                        return False
+                    
+                    # Check for valid data range
+                    data = src.read(1)
+                    if np.min(data) < 0 or np.max(data) > 65535:  # 16-bit range
+                        self.logger.warning(f"Band {band_num} has invalid data range: [{np.min(data)}, {np.max(data)}]")
+                        return False
+                    
+                    # Check for excessive zeros or null values
+                    zero_ratio = np.sum(data == 0) / data.size
+                    if zero_ratio > 0.5:  # More than 50% zeros
+                        self.logger.warning(f"Band {band_num} has too many zeros: {zero_ratio:.1%}")
+                        return False
+            
+            # Generate quality report if enabled
+            if self.config['quality_control']['generate_histograms']:
+                self._generate_quality_report(image_set)
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Validation failed for {image_set['name']}: {e}")
+            return False
+    
+    def _generate_quality_report(self, image_set: Dict):
+        """Generate quality control report for an image set"""
+        try:
+            report = {
+                "name": image_set["name"],
+                "timestamp": datetime.now().isoformat(),
+                "bands": {},
+                "quality_metrics": {}
+            }
+            
+            for band_num, band_path in image_set["bands"].items():
+                with rasterio.open(band_path) as src:
+                    data = src.read(1)
+                    
+                    # Calculate basic statistics
+                    stats = {
+                        "min": float(np.min(data)),
+                        "max": float(np.max(data)),
+                        "mean": float(np.mean(data)),
+                        "std": float(np.std(data)),
+                        "zeros_ratio": float(np.sum(data == 0) / data.size)
+                    }
+                    
+                    report["bands"][self.BAND_CONFIG[band_num]["name"]] = stats
+                    
+                    # Generate histogram if enabled
+                    if self.config['quality_control']['generate_histograms']:
+                        hist_path = self.output_dir / "quality_reports" / f"{image_set['name']}_{band_num}_histogram.png"
+                        self._generate_histogram(data, hist_path, self.BAND_CONFIG[band_num]["name"])
+            
+            # Save report
+            report_path = self.output_dir / "quality_reports" / f"{image_set['name']}_quality_report.json"
+            with open(report_path, 'w') as f:
+                json.dump(report, f, indent=2)
+                
+        except Exception as e:
+            self.logger.error(f"Failed to generate quality report for {image_set['name']}: {e}")
+    
+    def _generate_histogram(self, data: np.ndarray, output_path: Path, band_name: str):
+        """Generate histogram visualization for a band"""
+        try:
+            import matplotlib.pyplot as plt
+            
+            plt.figure(figsize=(10, 6))
+            plt.hist(data.flatten(), bins=256, range=(0, 65535))
+            plt.title(f"Histogram - {band_name} Band")
+            plt.xlabel("Pixel Value")
+            plt.ylabel("Frequency")
+            plt.grid(True, alpha=0.3)
+            
+            plt.savefig(output_path)
+            plt.close()
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate histogram: {e}")
+    
     def process_single_set(self, image_set: Dict) -> Dict:
         """Process a single MicaSense image set"""
         result = {
@@ -396,6 +487,11 @@ class MicaSenseProcessor:
             # Extract metadata from first band
             metadata = self.extract_metadata(image_set["bands"][1])
             result["metadata"] = metadata
+            
+            # Validate bands
+            if not self.validate_bands(image_set):
+                result["error"] = "Band validation failed"
+                return result
             
             # Align bands
             aligned_path = self.align_bands(image_set)
