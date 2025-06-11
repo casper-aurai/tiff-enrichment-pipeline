@@ -245,10 +245,27 @@ db-reset: ## Reset database (WARNING: This will delete all data!)
 # =============================================================================
 
 .PHONY: test
-test: ## Run tests in the pipeline container
-	@echo "$(CYAN)Running tests...$(NC)"
-	docker-compose -p $(COMPOSE_PROJECT) exec tiff-pipeline python -m pytest tests/ -v --cov=src/
-	@echo "$(GREEN)✓ Tests completed$(NC)"
+test: ## Run all tests
+	python -m pytest tests/ -v
+
+.PHONY: test-unit
+test-unit: ## Run unit tests only
+	python -m pytest tests/test_micasense_processor.py -v
+
+.PHONY: test-integration
+test-integration: ## Run integration tests only
+	python -m pytest tests/test_integration.py -v
+
+.PHONY: test-performance
+test-performance: ## Run performance tests only
+	python -m pytest tests/test_performance.py -v
+
+.PHONY: test-coverage
+test-coverage: ## Run tests with coverage report
+	python -m pytest tests/ --cov=src/pipeline --cov-report=term-missing --cov-report=html
+
+.PHONY: test-all
+test-all: test test-coverage ## Run all tests with coverage
 
 .PHONY: test-build
 test-build: ## Build and run tests
