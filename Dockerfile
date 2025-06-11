@@ -34,23 +34,14 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Copy application code (create directories first to avoid copy failures)
-RUN mkdir -p ./src ./config ./tests ./scripts
-
-# Copy source code
+# Copy application code
 COPY src/ ./src/
-
-# Copy configuration (optional)
-COPY config/ ./config/ 2>/dev/null || echo "No config directory found"
-
-# Copy test files (optional)
-COPY tests/ ./tests/ 2>/dev/null || echo "No tests directory found"
-
-# Copy scripts
+COPY config/ ./config/
+COPY tests/ ./tests/
 COPY scripts/ ./scripts/
 
 # Make scripts executable
-RUN chmod +x scripts/*.sh 2>/dev/null || echo "No shell scripts found"
+RUN find scripts/ -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
 
 # Switch to non-root user
 USER pipeline
