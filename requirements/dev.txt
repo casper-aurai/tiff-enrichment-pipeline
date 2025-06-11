@@ -47,7 +47,7 @@ python-json-logger==2.0.7
 
 # Database Tools
 alembic==1.11.0  # Database migrations
-psycopg2-binary==2.9.7  # PostgreSQL adapter
+psycopg2-binary==2.9.10  # PostgreSQL adapter
 redis==4.6.0  # Redis client
 
 # API Development
