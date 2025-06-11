@@ -45,3 +45,60 @@ up-published-all: check-env ## Start all services using published images
 	@echo "$(CYAN)Starting all TIFF Pipeline services (published images)...$(NC)"
 	docker-compose -f docker-compose.yml -f docker-compose.published.yml -p $(COMPOSE_PROJECT) --profile admin --profile monitoring --profile watcher up -d
 	@echo "$(GREEN)✓ All services started with published images$(NC)"
+
+# =============================================================================
+# MICASENSE PROCESSING OPERATIONS
+# =============================================================================
+
+.PHONY: process-micasense
+process-micasense: ## Process MicaSense RedEdge-M multispectral images (all 758 sets)
+	@if [ ! -d "data/input" ] || [ -z "$$(ls -A data/input)" ]; then \
+		echo "$(YELLOW)No files found in data/input directory$(NC)"; \
+		echo "Please add your MicaSense TIFF files to process"; \
+		echo "Expected format: IMG_XXXX_1.tif through IMG_XXXX_5.tif"; \
+	else \
+		echo "$(CYAN)Processing MicaSense RedEdge-M images...$(NC)"; \
+		docker-compose -p $(COMPOSE_PROJECT) exec tiff-pipeline python /app/scripts/process_micasense.py; \
+		echo "$(GREEN)✓ MicaSense processing completed$(NC)"; \
+		echo "$(YELLOW)Check results in data/output/$(NC)"; \
+	fi
+
+.PHONY: process-micasense-published
+process-micasense-published: ## Process MicaSense images using published container
+	@if [ ! -d "data/input" ] || [ -z "$$(ls -A data/input)" ]; then \
+		echo "$(YELLOW)No files found in data/input directory$(NC)"; \
+		echo "Please add your MicaSense TIFF files to process"; \
+	else \
+		echo "$(CYAN)Processing MicaSense RedEdge-M images (published container)...$(NC)"; \
+		docker run --rm \
+			-v $(PWD)/data/input:/data/input:ro \
+			-v $(PWD)/data/output:/data/output \
+			$(REGISTRY_GHCR):$(IMAGE_TAG) \
+			python /app/scripts/process_micasense.py; \
+		echo "$(GREEN)✓ MicaSense processing completed$(NC)"; \
+	fi
+
+.PHONY: micasense-info
+micasense-info: ## Show information about MicaSense processing
+	@echo "$(CYAN)MicaSense RedEdge-M Batch Processor$(NC)"
+	@echo ""
+	@echo "$(YELLOW)What it does:$(NC)"
+	@echo "  • Processes all 758 MicaSense image sets automatically"
+	@echo "  • Aligns and combines 5 spectral bands per capture"
+	@echo "  • Calculates vegetation indices (NDVI, NDRE, GNDVI)"
+	@echo "  • Extracts GPS coordinates and metadata"
+	@echo "  • Creates radiometrically calibrated outputs"
+	@echo ""
+	@echo "$(YELLOW)Input format:$(NC)"
+	@echo "  • Each capture should have 5 files: IMG_XXXX_1.tif to IMG_XXXX_5.tif"
+	@echo "  • Bands: 1=Blue, 2=Green, 3=Red, 4=NIR, 5=RedEdge"
+	@echo "  • Place all TIFF files in data/input/ directory"
+	@echo ""
+	@echo "$(YELLOW)Output:$(NC)"
+	@echo "  • data/output/aligned/ - Multi-band aligned TIFFs"
+	@echo "  • data/output/indices/ - Vegetation index maps"
+	@echo "  • data/output/metadata/ - JSON metadata files"
+	@echo ""
+	@echo "$(YELLOW)Usage:$(NC)"
+	@echo "  make process-micasense        # Use local build"
+	@echo "  make process-micasense-published  # Use published container"
