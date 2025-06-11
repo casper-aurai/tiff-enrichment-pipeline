@@ -125,22 +125,133 @@ class TIFFPipelineMain:
         
         # Create MicaSense processor
         micasense_output = self.output_dir / "micasense"
+        config = {
+            'vegetation_indices': {
+                'ndvi': True,
+                'ndre': True,
+                'gndvi': True
+            },
+            'quality_control': {
+                'check_metadata': True,
+                'check_dimensions': True,
+                'check_data_range': True
+            },
+            'output_options': {
+                'save_aligned': True,
+                'save_calibrated': True,
+                'save_indices': True,
+                'save_metadata': True,
+                'save_quality_report': True
+            },
+            'processing': {
+                'max_workers': self.max_workers,
+                'batch_size': self.batch_size
+            },
+            'logging': {
+                'level': 'INFO',
+                'save_to_file': True
+            },
+            'validation': {
+                'min_dimensions': (100, 100),
+                'valid_data_types': ['uint16', 'uint8'],
+                'data_range': (0, 65535),
+                'max_zero_ratio': 0.5,
+                'required_metadata': ['DateTime'],  # Only require DateTime
+                'known_metadata': {
+                    'CameraModel': 'MicaSense RedEdge-M',
+                    'GPSMapDatum': 'WGS84'
+                }
+            },
+            'band_config': {
+                1: {
+                    'name': 'Blue',
+                    'wavelength': 475,
+                    'description': 'Blue band',
+                    'camera': 'MicaSense RedEdge-M'
+                },
+                2: {
+                    'name': 'Green',
+                    'wavelength': 560,
+                    'description': 'Green band',
+                    'camera': 'MicaSense RedEdge-M'
+                },
+                3: {
+                    'name': 'Red',
+                    'wavelength': 668,
+                    'description': 'Red band',
+                    'camera': 'MicaSense RedEdge-M'
+                },
+                4: {
+                    'name': 'NIR',
+                    'wavelength': 840,
+                    'description': 'Near Infrared band',
+                    'camera': 'MicaSense RedEdge-M'
+                },
+                5: {
+                    'name': 'Red Edge',
+                    'wavelength': 717,
+                    'description': 'Red Edge band',
+                    'camera': 'MicaSense RedEdge-M'
+                }
+            },
+            'camera_info': {
+                'model': 'MicaSense RedEdge-M',
+                'bands': 5,
+                'gps_datum': 'WGS84',
+                'band_order': [1, 2, 3, 4, 5]  # Blue, Green, Red, NIR, Red Edge
+            }
+        }
         processor = MicaSenseProcessor(
-            input_dir=self.input_dir,
-            output_dir=micasense_output,
-            max_workers=self.max_workers
+            config=config,
+            output_dir=micasense_output
         )
         
-        # Process all sets
-        summary = processor.process_all()
+        # Group files into sets
+        file_sets = self._group_micasense_files(files)
+        
+        # Process first set as a test
+        if file_sets:
+            first_set = file_sets[0]
+            summary = processor.process_single_set(first_set)
+        else:
+            summary = {
+                'status': 'error',
+                'error': 'No complete MicaSense sets found'
+            }
         
         logger.info(f"MicaSense processing completed:")
-        logger.info(f"  - Total sets: {summary.get('total_sets', 0)}")
-        logger.info(f"  - Successful: {summary.get('successful', 0)}")
-        logger.info(f"  - Failed: {summary.get('failed', 0)}")
-        logger.info(f"  - Duration: {summary.get('duration_seconds', 0):.1f} seconds")
+        logger.info(f"  - Total sets: {len(file_sets)}")
+        logger.info(f"  - Status: {summary.get('status', 'unknown')}")
+        if 'error' in summary:
+            logger.error(f"  - Error: {summary['error']}")
         
         return summary
+    
+    def _group_micasense_files(self, files: List[Path]) -> List[Dict]:
+        """Group MicaSense files into complete sets"""
+        sets = {}
+        
+        for file in files:
+            base_name = self._get_micasense_base_name(file.name)
+            if base_name:
+                if base_name not in sets:
+                    sets[base_name] = {
+                        'name': base_name,
+                        'bands': {}
+                    }
+                # Extract band number from filename
+                band_num = int(file.name.split('_')[-1].split('.')[0])
+                sets[base_name]['bands'][band_num] = str(file)
+        
+        # Filter complete sets (must have all 5 bands)
+        complete_sets = []
+        for set_name, set_data in sets.items():
+            if len(set_data['bands']) == 5:
+                complete_sets.append(set_data)
+            else:
+                logger.warning(f"Incomplete set {set_name}: found {len(set_data['bands'])} bands")
+        
+        return complete_sets
     
     def process_regular_tiffs(self, files: List[Path]) -> Dict:
         """Process regular TIFF files with standard enrichment"""

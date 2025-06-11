@@ -64,7 +64,7 @@ COPY --chown=pipeline:pipeline . .
 RUN chmod +x /app/scripts/*.sh
 
 # Set Python path
-ENV PYTHONPATH=/app
+ENV PYTHONPATH=/app/src
 
 # Switch to non-root user
 USER pipeline

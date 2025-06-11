@@ -12,7 +12,7 @@ import json
 import traceback
 from concurrent.futures import ProcessPoolExecutor
 
-from ..utils.rasterio_utils import RasterioManager
+from pipeline.utils.rasterio_utils import RasterioManager
 from .errors import (
     MicaSenseError, ProcessingError, ValidationError,
     BandError, CalibrationError, OutputError

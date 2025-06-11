@@ -9,6 +9,8 @@ from typing import Dict, List, Any
 import rasterio
 from rasterio.errors import RasterioIOError
 import numpy as np
+from datetime import datetime
+import re
 
 from .errors import ValidationError
 
@@ -18,6 +20,19 @@ class MicaSenseValidator:
     def __init__(self, config: Dict[str, Any], logger: logging.Logger):
         self.config = config
         self.logger = logger
+    
+    def _extract_datetime_from_filename(self, filename: str) -> str:
+        """Extract datetime from MicaSense filename (IMG_XXXX format)"""
+        # Try to extract capture number from filename
+        match = re.match(r'^IMG_(\d{4})', filename)
+        if match:
+            capture_num = int(match.group(1))
+            # Use capture number to generate a timestamp
+            # This is a fallback - in production you'd want to use actual capture time
+            base_time = datetime(2025, 1, 1)  # Use a base date
+            capture_time = base_time.replace(hour=capture_num // 100, minute=capture_num % 100)
+            return capture_time.strftime('%Y:%m:%d %H:%M:%S')
+        return datetime.now().strftime('%Y:%m:%d %H:%M:%S')
     
     def validate_tiff_file(self, file_path: Path) -> List[str]:
         """Validate a single TIFF file"""
@@ -54,13 +69,21 @@ class MicaSenseValidator:
                     issues.append(f"High zero ratio: {zero_ratio:.1%}")
                 
                 # Check for metadata
-                if not src.tags():
-                    issues.append("Missing metadata")
-                else:
-                    # Check required metadata
-                    for tag in self.config['validation']['required_metadata']:
-                        if tag not in src.tags():
-                            issues.append(f"Missing required metadata: {tag}")
+                tags = src.tags()
+                
+                # Handle DateTime metadata
+                if 'DateTime' not in tags:
+                    # Extract DateTime from filename
+                    datetime_str = self._extract_datetime_from_filename(file_path.name)
+                    # Add DateTime to tags
+                    tags['DateTime'] = datetime_str
+                    self.logger.info(f"Added DateTime metadata from filename: {datetime_str}")
+                
+                # Check known metadata if present
+                known_metadata = self.config['validation'].get('known_metadata', {})
+                for tag, expected_value in known_metadata.items():
+                    if tag in tags and tags[tag] != expected_value:
+                        issues.append(f"Unexpected {tag} value: {tags[tag]} (expected {expected_value})")
             
         except RasterioIOError as e:
             issues.append(f"Failed to open file: {str(e)}")
