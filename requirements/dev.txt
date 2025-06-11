@@ -23,7 +23,7 @@ safety==2.3.5  # Dependency security checker
 # Development Tools
 ipython==8.14.0
 jupyter==1.0.0
-debugpy==1.8.0  # VS Code debugging
+debugpy==1.8.14  # VS Code debugging
 watchdog==3.0.0  # Hot reloading
 python-dotenv==1.0.0  # Environment management
 
