@@ -1,0 +1,97 @@
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Data directories
+data/input/*
+data/output/*
+data/failed/*
+!data/input/.gitkeep
+!data/output/.gitkeep
+!data/failed/.gitkeep
+
+# Logs
+logs/*
+!logs/.gitkeep
+
+# Docker volumes
+postgres_data/
+redis_data/
+prometheus_data/
+grafana_data/
+
+# Backups (optional - you might want to track these)
+backups/*.sql
+backups/*.dump
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SSL certificates
+nginx/ssl/*
+*.pem
+*.key
+*.crt
+
+# Temporary files
+*.tmp
+*.log
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
