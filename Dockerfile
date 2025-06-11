@@ -39,12 +39,19 @@ RUN groupadd -r pipeline && \
 # Set working directory
 WORKDIR /app
 
-# Create and activate virtual environment
-RUN python3 -m venv /app/venv
+# Create and activate virtual environment as root
+RUN python3 -m venv /app/venv && \
+    chown -R pipeline:pipeline /app/venv
+
+# Switch to non-root user for pip operations
+USER pipeline
+
+# Set up virtual environment
 ENV PATH="/app/venv/bin:$PATH"
+ENV VIRTUAL_ENV="/app/venv"
 
 # Copy requirements first for better caching
-COPY requirements.txt .
+COPY --chown=pipeline:pipeline requirements.txt .
 
 # Install Python dependencies in virtual environment
 RUN pip3 install --no-cache-dir --upgrade pip && \
@@ -54,16 +61,13 @@ RUN pip3 install --no-cache-dir --upgrade pip && \
     -r requirements.txt
 
 # Copy application code
-COPY src/ ./src/
-COPY config/ ./config/
-COPY tests/ ./tests/
-COPY scripts/ ./scripts/
+COPY --chown=pipeline:pipeline src/ ./src/
+COPY --chown=pipeline:pipeline config/ ./config/
+COPY --chown=pipeline:pipeline tests/ ./tests/
+COPY --chown=pipeline:pipeline scripts/ ./scripts/
 
 # Make scripts executable
 RUN find scripts/ -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
-
-# Switch to non-root user
-USER pipeline
 
 # Set Python path
 ENV PYTHONPATH=/app/src

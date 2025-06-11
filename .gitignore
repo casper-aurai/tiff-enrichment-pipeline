@@ -98,3 +98,4 @@ dmypy.json
 data/postgres/
 data/redis/
 inspirational_assets/
+improvements.md
