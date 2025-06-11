@@ -1,7 +1,7 @@
 # Core geospatial libraries - using system packages where possible
 # GDAL, rasterio, fiona, geopandas, shapely, pyproj will be from system packages
 rasterio==1.3.8
-GDAL==3.6.3
+# GDAL==3.6.3  # Removed as it's provided by the base image
 matplotlib>=3.5.0
 
 # Data processing (compatible versions)
@@ -89,7 +89,7 @@ numpy==1.24.3
 pandas==2.0.3
 scipy==1.11.2
 rasterio==1.3.8
-GDAL==3.6.3
+# GDAL==3.6.3  # Removed as it's provided by the base image
 matplotlib==3.7.2
 opencv-python==4.8.0.76
 scikit-image==0.21.0
