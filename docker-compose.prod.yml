@@ -1,0 +1,226 @@
+version: '3.8'
+
+# Production overrides for docker-compose.yml
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  tiff-pipeline:
+    restart: always
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - MAX_WORKERS=8
+      - PROCESSING_BATCH_SIZE=10
+      - API_RATE_LIMIT=20
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    healthcheck:
+      interval: 15s
+      timeout: 5s
+      start-period: 120s
+      retries: 5
+
+  postgres:
+    restart: always
+    environment:
+      - POSTGRES_SHARED_PRELOAD_LIBRARIES=pg_stat_statements
+      - POSTGRES_MAX_CONNECTIONS=100
+      - POSTGRES_SHARED_BUFFERS=256MB
+      - POSTGRES_EFFECTIVE_CACHE_SIZE=1GB
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    command: >
+      postgres
+      -c max_connections=100
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  redis:
+    restart: always
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 1gb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "2"
+
+  # Add nginx reverse proxy for production
+  nginx:
+    image: nginx:alpine
+    container_name: tiff-pipeline-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - tiff-pipeline
+    restart: always
+    networks:
+      - pipeline-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # Production monitoring with persistent storage
+  prometheus:
+    restart: always
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.retention.size=10GB'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  grafana:
+    restart: always
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY}
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # File watcher with production settings
+  file-watcher:
+    restart: always
+    environment:
+      - ENVIRONMENT=production
+      - WATCH_INTERVAL=60
+      - LOG_LEVEL=INFO
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # Remove admin tools from production (override profiles)
+  pgadmin:
+    profiles:
+      - admin-dev
+
+  redis-commander:
+    profiles:
+      - admin-dev
+
+# Production volume configurations
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/tiff-pipeline/data/postgres
+  
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/tiff-pipeline/data/redis
+  
+  prometheus_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/tiff-pipeline/data/prometheus
+  
+  grafana_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/tiff-pipeline/data/grafana
+
+# Production networks with custom subnet
+networks:
+  pipeline-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
