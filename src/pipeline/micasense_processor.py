@@ -12,6 +12,7 @@ import logging
 from concurrent.futures import ProcessPoolExecutor
 import glob
 from datetime import datetime
+import logging.handlers
 
 try:
     from osgeo import gdal, osr
@@ -36,29 +37,98 @@ class MicaSenseProcessor:
         5: {"name": "Red Edge", "center_wavelength": 717, "bandwidth": 10}
     }
     
-    def __init__(self, input_dir: Path, output_dir: Path, max_workers: int = 4):
+    def __init__(self, input_dir: Path, output_dir: Path, max_workers: int = 4, config: Dict = None):
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.max_workers = max_workers
         
+        # Load configuration
+        self.config = self._load_config(config)
+        
         # Create output directories
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        (self.output_dir / "aligned").mkdir(exist_ok=True)
-        (self.output_dir / "indices").mkdir(exist_ok=True)
-        (self.output_dir / "metadata").mkdir(exist_ok=True)
+        self._setup_directories()
         
         # Setup logging
         self.logger = self._setup_logging()
+        
+    def _load_config(self, user_config: Dict = None) -> Dict:
+        """Load and validate configuration"""
+        default_config = {
+            'quality_control': {
+                'check_band_alignment': True,
+                'validate_reflectance_range': True,
+                'generate_histograms': True
+            },
+            'vegetation_indices': {
+                'ndvi': True,
+                'ndre': True,
+                'gndvi': True,
+                'savi': False
+            },
+            'output_options': {
+                'save_individual_bands': True,
+                'generate_thumbnails': True,
+                'overwrite_existing': False
+            },
+            'processing': {
+                'radiometric_calibration': True,
+                'band_alignment': True,
+                'generate_indices': True
+            }
+        }
+        
+        if user_config:
+            # Deep merge user config with defaults
+            def deep_merge(d1, d2):
+                for k, v in d2.items():
+                    if k in d1 and isinstance(d1[k], dict) and isinstance(v, dict):
+                        deep_merge(d1[k], v)
+                    else:
+                        d1[k] = v
+                return d1
+            
+            default_config = deep_merge(default_config, user_config)
+        
+        return default_config
+    
+    def _setup_directories(self):
+        """Create necessary output directories"""
+        dirs = [
+            'aligned',
+            'indices',
+            'metadata',
+            'quality_reports',
+            'thumbnails',
+            'individual_bands'
+        ]
+        
+        for dir_name in dirs:
+            dir_path = self.output_dir / dir_name
+            dir_path.mkdir(parents=True, exist_ok=True)
         
     def _setup_logging(self) -> logging.Logger:
         """Setup logging for the processor"""
         logger = logging.getLogger("MicaSenseProcessor")
         logger.setLevel(logging.INFO)
         
-        handler = logging.FileHandler(self.output_dir / "processing.log")
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+        # Remove any existing handlers
+        for handler in logger.handlers[:]:
+            logger.removeHandler(handler)
+        
+        # File handler with rotation
+        file_handler = logging.handlers.RotatingFileHandler(
+            self.output_dir / "processing.log",
+            maxBytes=10*1024*1024,  # 10MB
+            backupCount=3
+        )
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(file_handler)
+        
+        # Console handler for important messages
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.WARNING)  # Only show warnings and errors in console
+        console_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+        logger.addHandler(console_handler)
         
         return logger
     
@@ -69,9 +139,17 @@ class MicaSenseProcessor:
         """
         image_sets = []
         
-        # Pattern for MicaSense files: IMG_XXXX_Y.tif (where Y is band number)
-        pattern = self.input_dir / "**" / "IMG_*.tif"
-        all_files = glob.glob(str(pattern), recursive=True)
+        # More flexible pattern for MicaSense files
+        patterns = [
+            "**/IMG_*.tif",
+            "**/IMG_*.TIF",
+            "**/IMG_*.tiff",
+            "**/IMG_*.TIFF"
+        ]
+        
+        all_files = []
+        for pattern in patterns:
+            all_files.extend(glob.glob(str(self.input_dir / pattern), recursive=True))
         
         # Group files by capture (same base name, different band numbers)
         captures = {}
@@ -90,20 +168,29 @@ class MicaSenseProcessor:
                     try:
                         band_int = int(band_num)
                         if 1 <= band_int <= 5:  # MicaSense has 5 bands
-                            captures[base_name][band_int] = file_path
+                            captures[base_name][band_int] = str(file_path)
                     except ValueError:
                         continue
         
         # Filter complete sets (must have all 5 bands)
         for base_name, bands in captures.items():
             if len(bands) == 5 and all(i in bands for i in range(1, 6)):
+                # Sort bands to ensure consistent order
+                sorted_bands = {k: bands[k] for k in sorted(bands.keys())}
                 image_sets.append({
                     "name": base_name,
-                    "bands": bands,
+                    "bands": sorted_bands,
                     "path": Path(bands[1]).parent  # Directory containing the files
                 })
                 
         self.logger.info(f"Found {len(image_sets)} complete MicaSense image sets")
+        if len(image_sets) == 0:
+            self.logger.warning("No complete MicaSense image sets found")
+            # Log the partial sets for debugging
+            partial_sets = {name: len(bands) for name, bands in captures.items() if len(bands) < 5}
+            if partial_sets:
+                self.logger.warning(f"Found {len(partial_sets)} incomplete sets: {partial_sets}")
+        
         return image_sets
     
     def extract_metadata(self, image_path: str) -> Dict:
@@ -348,38 +435,87 @@ class MicaSenseProcessor:
         
         if not image_sets:
             self.logger.warning("No complete MicaSense image sets found")
-            return {"status": "no_data", "processed": 0, "failed": 0}
+            return {
+                "status": "no_data",
+                "total_sets": 0,
+                "successful": 0,
+                "failed": 0,
+                "duration_seconds": 0,
+                "start_time": start_time.isoformat(),
+                "end_time": datetime.now().isoformat()
+            }
         
         # Process with multiprocessing
         results = []
         successful = 0
         failed = 0
         
-        if self.max_workers == 1:
-            # Sequential processing
-            for image_set in image_sets:
-                result = self.process_single_set(image_set)
-                results.append(result)
-                if result["status"] == "success":
-                    successful += 1
-                else:
-                    failed += 1
-        else:
-            # Parallel processing
-            with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
-                futures = [executor.submit(self.process_single_set, img_set) for img_set in image_sets]
-                
-                for future in futures:
+        try:
+            if self.max_workers == 1:
+                # Sequential processing
+                for image_set in image_sets:
                     try:
-                        result = future.result()
+                        result = self.process_single_set(image_set)
                         results.append(result)
                         if result["status"] == "success":
                             successful += 1
                         else:
                             failed += 1
+                            self.logger.error(f"Failed to process {image_set['name']}: {result.get('error', 'Unknown error')}")
                     except Exception as e:
-                        self.logger.error(f"Processing failed: {e}")
                         failed += 1
+                        self.logger.error(f"Error processing {image_set['name']}: {str(e)}")
+                        results.append({
+                            "name": image_set["name"],
+                            "status": "failed",
+                            "error": str(e)
+                        })
+            else:
+                # Parallel processing with error handling
+                with ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+                    futures = []
+                    for img_set in image_sets:
+                        future = executor.submit(self.process_single_set, img_set)
+                        futures.append((img_set["name"], future))
+                    
+                    for name, future in futures:
+                        try:
+                            result = future.result(timeout=300)  # 5 minute timeout per set
+                            results.append(result)
+                            if result["status"] == "success":
+                                successful += 1
+                            else:
+                                failed += 1
+                                self.logger.error(f"Failed to process {name}: {result.get('error', 'Unknown error')}")
+                        except TimeoutError:
+                            failed += 1
+                            self.logger.error(f"Timeout processing {name}")
+                            results.append({
+                                "name": name,
+                                "status": "failed",
+                                "error": "Processing timeout"
+                            })
+                        except Exception as e:
+                            failed += 1
+                            self.logger.error(f"Error processing {name}: {str(e)}")
+                            results.append({
+                                "name": name,
+                                "status": "failed",
+                                "error": str(e)
+                            })
+        
+        except Exception as e:
+            self.logger.error(f"Fatal error during batch processing: {str(e)}")
+            return {
+                "status": "failed",
+                "error": str(e),
+                "total_sets": len(image_sets),
+                "successful": successful,
+                "failed": failed,
+                "duration_seconds": (datetime.now() - start_time).total_seconds(),
+                "start_time": start_time.isoformat(),
+                "end_time": datetime.now().isoformat()
+            }
         
         # Save summary
         end_time = datetime.now()
@@ -396,6 +532,7 @@ class MicaSenseProcessor:
             "results": results
         }
         
+        # Save detailed summary
         summary_path = self.output_dir / "processing_summary.json"
         with open(summary_path, 'w') as f:
             json.dump(summary, f, indent=2, default=str)

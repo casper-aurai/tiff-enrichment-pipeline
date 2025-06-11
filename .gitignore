@@ -97,3 +97,4 @@ Pipfile.lock
 dmypy.json
 data/postgres/
 data/redis/
+inspirational_assets/
