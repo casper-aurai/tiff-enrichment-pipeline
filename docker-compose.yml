@@ -1,0 +1,193 @@
+version: '3.8'
+
+services:
+  # Main TIFF enrichment pipeline
+  tiff-pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tiff-enrichment-pipeline
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DATABASE_URL=postgresql://pipeline:${POSTGRES_PASSWORD}@postgres:5432/tiff_pipeline
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - API_RATE_LIMIT=${API_RATE_LIMIT:-10}
+      - PROCESSING_BATCH_SIZE=${PROCESSING_BATCH_SIZE:-5}
+      - MAX_WORKERS=${MAX_WORKERS:-4}
+      # API Keys (set in .env file)
+      - USGS_API_KEY=${USGS_API_KEY}
+      - OPENMETEO_API_KEY=${OPENMETEO_API_KEY}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+    volumes:
+      - ./data/input:/data/input:ro
+      - ./data/output:/data/output
+      - ./data/failed:/data/failed
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - pipeline-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # PostgreSQL with PostGIS for metadata tracking
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: tiff-pipeline-db
+    environment:
+      - POSTGRES_DB=tiff_pipeline
+      - POSTGRES_USER=pipeline
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./scripts/create-tables.sql:/docker-entrypoint-initdb.d/02-create-tables.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    restart: unless-stopped
+    networks:
+      - pipeline-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pipeline -d tiff_pipeline"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Redis for API response caching
+  redis:
+    image: redis:7-alpine
+    container_name: tiff-pipeline-cache
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    restart: unless-stopped
+    networks:
+      - pipeline-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: tiff-pipeline-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin@example.com}
+      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-admin}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    ports:
+      - "${PGADMIN_PORT:-8080}:80"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - pipeline-network
+    profiles:
+      - admin
+
+  # Optional: Redis Commander for cache inspection
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: tiff-pipeline-redis-ui
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "${REDIS_UI_PORT:-8081}:8081"
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - pipeline-network
+    profiles:
+      - admin
+
+  # File watcher service for automatic processing
+  file-watcher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tiff-file-watcher
+    command: ["python3", "-m", "pipeline.watcher"]
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DATABASE_URL=postgresql://pipeline:${POSTGRES_PASSWORD}@postgres:5432/tiff_pipeline
+      - REDIS_URL=redis://redis:6379/0
+      - WATCH_INTERVAL=${WATCH_INTERVAL:-30}
+    volumes:
+      - ./data/input:/data/input:ro
+      - ./data/output:/data/output
+      - ./data/failed:/data/failed
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    depends_on:
+      - tiff-pipeline
+    restart: unless-stopped
+    networks:
+      - pipeline-network
+    profiles:
+      - watcher
+
+  # Monitoring and metrics (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: tiff-pipeline-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    restart: unless-stopped
+    networks:
+      - pipeline-network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: tiff-pipeline-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - pipeline-network
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_data:
+  redis_data:
+  pgadmin_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  pipeline-network:
+    driver: bridge
