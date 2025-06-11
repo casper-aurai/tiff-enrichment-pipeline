@@ -19,8 +19,8 @@ try:
     import rasterio
     from rasterio.merge import merge
     from rasterio.warp import calculate_default_transform, reproject, Resampling
-except ImportError:
-    print("GDAL/rasterio not available - install with: pip install GDAL rasterio")
+except ImportError as e:
+    raise ImportError("Required geospatial libraries not available. Please ensure GDAL and rasterio are installed: pip install GDAL rasterio") from e
 
 class MicaSenseProcessor:
     """
