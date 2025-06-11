@@ -319,6 +319,27 @@ deploy-prod: ## Deploy to production (requires additional setup)
 	fi
 
 # =============================================================================
+# PRODUCTION OPERATIONS
+# =============================================================================
+
+.PHONY: up-prod
+up-prod: check-env ## Start all containers in production mode
+	@echo "$(CYAN)Starting TIFF Pipeline (production)...$(NC)"
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+	@echo "$(GREEN)✓ Production pipeline started$(NC)"
+
+.PHONY: down-prod
+down-prod: ## Stop all containers in production mode
+	@echo "$(CYAN)Stopping TIFF Pipeline (production)...$(NC)"
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml down
+	@echo "$(GREEN)✓ Production pipeline stopped$(NC)"
+
+.PHONY: status-prod
+status-prod: ## Show status of all containers in production mode
+	@echo "$(CYAN)TIFF Pipeline Status (production):$(NC)"
+	docker-compose -f docker-compose.yml -f docker-compose.prod.yml ps
+
+# =============================================================================
 # UTILITIES
 # =============================================================================
 

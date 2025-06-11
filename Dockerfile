@@ -1,3 +1,4 @@
+# This Dockerfile is used for both development and production builds.
 # Multi-stage build for TIFF enrichment pipeline
 FROM ghcr.io/osgeo/gdal:ubuntu-small-3.11.0 as base
 

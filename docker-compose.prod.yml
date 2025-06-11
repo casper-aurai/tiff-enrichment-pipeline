@@ -1,3 +1,4 @@
+# This is the production override Docker Compose file. Use with docker-compose.yml.
 version: '3.8'
 
 # Production overrides for docker-compose.yml
@@ -28,7 +29,6 @@ services:
     healthcheck:
       interval: 15s
       timeout: 5s
-      start-period: 120s
       retries: 5
 
   postgres:
