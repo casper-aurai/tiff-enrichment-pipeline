@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     python3-pip \
     python3-venv \
+    python3-distutils \
     libgdal-dev \
     gdal-bin \
     libspatialindex-dev \
@@ -69,15 +70,23 @@ RUN useradd -m -s /bin/bash pipeline && \
     mkdir -p /data/input /data/output /app/logs /tmp/rasterio_locks && \
     chown -R pipeline:pipeline /data /app/logs /tmp/rasterio_locks && \
     chmod -R 755 /data /app/logs /tmp/rasterio_locks && \
-    # Clean up
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
+    # Install required packages
+    apt-get update && apt-get install -y --no-install-recommends \
+    python3-distutils \
+    build-essential \
+    python3-dev \
+    gcc \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean && \
     rm -rf /tmp/* && \
     rm -rf /var/tmp/*
 
 # Copy application code
 WORKDIR /app
 COPY --chown=pipeline:pipeline . .
+
+# Install the package in development mode
+RUN pip install --no-cache-dir -e ".[dev]"
 
 # Make scripts executable
 RUN chmod +x /app/scripts/*.sh

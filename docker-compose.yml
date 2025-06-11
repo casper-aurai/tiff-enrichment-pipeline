@@ -1,201 +1,107 @@
 # This is the development Docker Compose file. For production, use docker-compose.prod.yml as an override.
-version: '3.8'
-
 services:
-  # Main TIFF enrichment pipeline
-  tiff-pipeline:
+  pipeline:
     build:
       context: .
       dockerfile: Dockerfile
-      target: builder  # Use the builder stage for development
       args:
-        - ENVIRONMENT=development
-    container_name: tiff-enrichment-pipeline
+        ENVIRONMENT: development
     environment:
       - ENVIRONMENT=development
-      - DATABASE_URL=postgresql://pipeline:${POSTGRES_PASSWORD}@postgres:5432/tiff_pipeline
-      - REDIS_URL=redis://redis:6379/0
-      - LOG_LEVEL=${LOG_LEVEL:-DEBUG}  # Set to DEBUG for development
-      - API_RATE_LIMIT=${API_RATE_LIMIT:-10}
-      - PROCESSING_BATCH_SIZE=${PROCESSING_BATCH_SIZE:-5}
-      - MAX_WORKERS=${MAX_WORKERS:-4}
       - PYTHONPATH=/app/src
-      # Development specific settings
-      - PYTHONUNBUFFERED=1
-      - PYTHONDONTWRITEBYTECODE=1
-      - DEBUG=1
+      - GDAL_DATA=/usr/share/gdal
+      - PROJ_LIB=/usr/share/proj
     volumes:
-      - ./data/input:/data/input:ro
+      - ./data/input:/data/input
       - ./data/output:/data/output
-      - ./data/failed:/data/failed
-      - ./logs:/app/logs
-      - ./config:/app/config:ro
-      - ./src:/app/src  # Mount source code for development
+      - ./app/logs:/app/logs
+      - ./src:/app/src
+      - ./tests:/app/tests
+    ports:
+      - "8000:8000"
     depends_on:
-      postgres:
+      postgis:
         condition: service_healthy
       redis:
         condition: service_healthy
     deploy:
       resources:
         limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
           cpus: '2'
           memory: 4G
-        reservations:
-          cpus: '1'
-          memory: 2G
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_BIND_SERVICE
-    restart: unless-stopped
-    networks:
-      - pipeline-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
     healthcheck:
-      test: ["CMD", "python", "-c", "import rasterio; print('Rasterio version:', rasterio.__version__)"]
+      test: ["CMD", "python3", "-c", "import rasterio; print('Rasterio version:', rasterio.__version__)"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
 
-  # Development tools
-  dev-tools:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: builder
-      args:
-        - ENVIRONMENT=development
-    container_name: tiff-pipeline-dev-tools
-    command: tail -f /dev/null  # Keep container running
-    volumes:
-      - ./src:/app/src
-      - ./tests:/app/tests
-      - ./config:/app/config
+  postgis:
+    image: postgis/postgis:15-3.3
     environment:
-      - ENVIRONMENT=development
-      - PYTHONPATH=/app/src
-    profiles:
-      - dev
-
-  # Development database
-  postgres:
-    image: postgres:15
-    platform: linux/arm64/v8
-    container_name: tiff-pipeline-db
-    environment:
-      - POSTGRES_DB=tiff_pipeline
+      - POSTGRES_DB=pipeline
       - POSTGRES_USER=pipeline
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_INITDB_ARGS=--encoding=UTF-8
+      - POSTGRES_PASSWORD=pipeline
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
-      - ./scripts/create-tables.sql:/docker-entrypoint-initdb.d/02-create-tables.sql:ro
+      - postgis_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 2G
-    restart: unless-stopped
-    networks:
-      - pipeline-network
+      - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pipeline -d tiff_pipeline"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD-SHELL", "pg_isready -U pipeline"]
+      interval: 10s
+      timeout: 5s
       retries: 5
 
-  # Development cache
   redis:
     image: redis:7-alpine
-    platform: linux/arm64/v8
-    container_name: tiff-pipeline-cache
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     ports:
-      - "${REDIS_PORT:-6379}:6379"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    restart: unless-stopped
-    networks:
-      - pipeline-network
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # Development monitoring
   prometheus:
-    image: prom/prometheus:latest
-    container_name: tiff-pipeline-prometheus
+    image: prom/prometheus:v2.45.0
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
     ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-    restart: unless-stopped
-    networks:
-      - pipeline-network
-    profiles:
-      - monitoring
+      - "9090:9090"
+    depends_on:
+      - pipeline
 
   grafana:
-    image: grafana/grafana:latest
-    container_name: tiff-pipeline-grafana
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+    image: grafana/grafana:10.0.0
     volumes:
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
+      - "3000:3000"
     depends_on:
       - prometheus
-    restart: unless-stopped
-    networks:
-      - pipeline-network
-    profiles:
-      - monitoring
 
 volumes:
-  postgres_data:
-    name: tiff-enrichment-pipeline_postgres_data
+  postgis_data:
   redis_data:
-    name: tiff-enrichment-pipeline_redis_data
   prometheus_data:
-    name: tiff-enrichment-pipeline_prometheus_data
   grafana_data:
-    name: tiff-enrichment-pipeline_grafana_data
 
 networks:
   pipeline-network:
