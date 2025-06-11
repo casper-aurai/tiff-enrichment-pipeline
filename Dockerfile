@@ -32,8 +32,8 @@ WORKDIR /app
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip3 install --no-cache-dir -r requirements.txt
+# Install Python dependencies (use --break-system-packages for Docker environment)
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy application code
 COPY src/ ./src/
