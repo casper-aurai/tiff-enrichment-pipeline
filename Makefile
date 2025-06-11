@@ -120,6 +120,7 @@ restart: down up ## Restart the pipeline
 .PHONY: fullcycle
 fullcycle: ## Complete cleanup and rebuild of the entire system
 	@echo "$(RED)⚠️  WARNING: This will remove ALL containers, images, volumes, and cache!$(NC)"
+	@echo "$(RED)⚠️  This includes ALL Docker resources, not just those from this project!$(NC)"
 	@read -p "Are you sure? Type 'yes' to continue: " confirm; \
 	if [ "$$confirm" = "yes" ]; then \
 		echo "$(CYAN)Starting full system cleanup and rebuild...$(NC)"; \
@@ -135,12 +136,29 @@ fullcycle: ## Complete cleanup and rebuild of the entire system
 		docker network prune -f; \
 		echo "$(YELLOW)6. Cleaning Docker system...$(NC)"; \
 		docker system prune -af --volumes; \
-		echo "$(YELLOW)7. Rebuilding from scratch...$(NC)"; \
+		echo "$(YELLOW)7. Cleaning Docker build cache...$(NC)"; \
+		docker builder prune -af; \
+		echo "$(YELLOW)8. Verifying cleanup...$(NC)"; \
+		if [ "$$(docker ps -a -q)" != "" ]; then \
+			echo "$(RED)Error: Some containers still exist!$(NC)"; \
+			exit 1; \
+		fi; \
+		if [ "$$(docker images -q)" != "" ]; then \
+			echo "$(RED)Error: Some images still exist!$(NC)"; \
+			exit 1; \
+		fi; \
+		if [ "$$(docker volume ls -q)" != "" ]; then \
+			echo "$(RED)Error: Some volumes still exist!$(NC)"; \
+			exit 1; \
+		fi; \
+		echo "$(GREEN)✓ Cleanup verified$(NC)"; \
+		echo "$(YELLOW)9. Rebuilding from scratch...$(NC)"; \
 		docker-compose -p $(COMPOSE_PROJECT) build --no-cache; \
-		echo "$(YELLOW)8. Starting all services...$(NC)"; \
+		echo "$(YELLOW)10. Starting all services...$(NC)"; \
 		docker-compose -p $(COMPOSE_PROJECT) --profile admin --profile monitoring --profile watcher up -d; \
 		echo "$(GREEN)✓ Full cycle completed successfully!$(NC)"; \
 		echo "$(YELLOW)Check status with: make status$(NC)"; \
+		echo "$(YELLOW)Check health with: make health$(NC)"; \
 	else \
 		echo "$(YELLOW)Full cycle cancelled$(NC)"; \
 	fi

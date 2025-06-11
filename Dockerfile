@@ -29,6 +29,7 @@ RUN apt-get update && apt-get install -y \
 ENV GDAL_CONFIG=/usr/bin/gdal-config
 ENV CPLUS_INCLUDE_PATH=/usr/include/gdal
 ENV C_INCLUDE_PATH=/usr/include/gdal
+ENV GDAL_VERSION=3.11.0
 
 # Create application user (use different UID to avoid conflicts)
 RUN groupadd -r pipeline && \
@@ -55,7 +56,7 @@ COPY --chown=pipeline:pipeline requirements.txt .
 
 # Install Python dependencies in virtual environment
 RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir GDAL==$(gdal-config --version) && \
+    pip3 install --no-cache-dir GDAL==${GDAL_VERSION} && \
     pip3 install --no-cache-dir \
     --find-links /usr/lib/python3/dist-packages \
     --prefer-binary \
