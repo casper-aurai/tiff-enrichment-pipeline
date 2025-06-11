@@ -1,94 +1,155 @@
 """
 MicaSense Configuration Module
-Handles configuration loading and validation
+Manages configuration settings for the MicaSense processing pipeline
 """
 
 import json
 from pathlib import Path
 from typing import Dict, Any
-import multiprocessing as mp
 
-DEFAULT_CONFIG = {
-    'quality_control': {
-        'check_band_alignment': True,
-        'validate_reflectance_range': True,
-        'generate_histograms': True,
-        'validate_dimensions': True,
-        'check_zero_ratio': True
-    },
-    'vegetation_indices': {
-        'ndvi': True,
-        'ndre': True,
-        'gndvi': True,
-        'savi': False,
-        'msavi': False,
-        'evi': False
-    },
-    'output_options': {
-        'save_individual_bands': True,
-        'generate_thumbnails': True,
-        'overwrite_existing': False,
-        'save_quality_reports': True,
-        'save_metadata': True
-    },
-    'processing': {
-        'radiometric_calibration': True,
-        'band_alignment': True,
-        'generate_indices': True,
-        'max_workers': mp.cpu_count() - 1,
-        'batch_size': 10
-    },
-    'band_config': {
-        1: {"name": "Blue", "center_wavelength": 475, "bandwidth": 20},
-        2: {"name": "Green", "center_wavelength": 560, "bandwidth": 20},
-        3: {"name": "Red", "center_wavelength": 668, "bandwidth": 10},
-        4: {"name": "Near IR", "center_wavelength": 840, "bandwidth": 40},
-        5: {"name": "Red Edge", "center_wavelength": 717, "bandwidth": 10}
-    }
-}
+from .errors import ConfigurationError
 
-def load_config(config_path: Path = None, user_config: Dict = None) -> Dict[str, Any]:
-    """
-    Load and validate configuration
+class MicaSenseConfig:
+    """Configuration management for MicaSense processing"""
     
-    Args:
-        config_path: Path to configuration JSON file
-        user_config: Dictionary with user configuration
+    @staticmethod
+    def create_default(output_dir: Path) -> Dict[str, Any]:
+        """Create default configuration"""
+        return {
+            'quality_control': {
+                'check_band_alignment': True,
+                'validate_reflectance_range': True,
+                'generate_histograms': True,
+                'validate_dimensions': True,
+                'check_zero_ratio': True,
+                'validate_metadata': True,
+                'check_data_range': True
+            },
+            'vegetation_indices': {
+                'ndvi': True,
+                'ndre': True,
+                'gndvi': True,
+                'savi': True,
+                'msavi': True,
+                'evi': True,
+                'osavi': True,
+                'ndwi': True
+            },
+            'output_options': {
+                'save_individual_bands': True,
+                'generate_thumbnails': True,
+                'overwrite_existing': False,
+                'save_quality_reports': True,
+                'save_metadata': True,
+                'save_visualizations': True,
+                'save_processing_report': True
+            },
+            'processing': {
+                'radiometric_calibration': True,
+                'band_alignment': True,
+                'generate_indices': True,
+                'max_workers': 4,
+                'batch_size': 10,
+                'timeout_seconds': 300,
+                'retry_attempts': 2
+            },
+            'logging': {
+                'level': 'INFO',
+                'file': str(output_dir / "processing.log"),
+                'max_file_size': 10 * 1024 * 1024,  # 10MB
+                'backup_count': 5
+            },
+            'validation': {
+                'min_dimensions': (100, 100),
+                'max_zero_ratio': 0.5,
+                'valid_data_types': ['uint8', 'uint16'],
+                'data_range': (0, 65535),
+                'required_metadata': [
+                    'EXIF_DateTime',
+                    'EXIF_GPS_Lat',
+                    'EXIF_GPS_Lon'
+                ]
+            },
+            'band_config': {
+                1: {
+                    "name": "Blue",
+                    "wavelength": 475,
+                    "description": "Blue band (475nm)"
+                },
+                2: {
+                    "name": "Green",
+                    "wavelength": 560,
+                    "description": "Green band (560nm)"
+                },
+                3: {
+                    "name": "Red",
+                    "wavelength": 668,
+                    "description": "Red band (668nm)"
+                },
+                4: {
+                    "name": "NIR",
+                    "wavelength": 840,
+                    "description": "Near Infrared band (840nm)"
+                },
+                5: {
+                    "name": "Red Edge",
+                    "wavelength": 717,
+                    "description": "Red Edge band (717nm)"
+                }
+            }
+        }
+    
+    @staticmethod
+    def load_from_file(config_path: Path) -> Dict[str, Any]:
+        """Load configuration from file"""
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            # Validate required sections
+            required_sections = [
+                'quality_control',
+                'vegetation_indices',
+                'output_options',
+                'processing',
+                'logging',
+                'validation',
+                'band_config'
+            ]
+            
+            for section in required_sections:
+                if section not in config:
+                    raise ConfigurationError(f"Missing required section: {section}")
+            
+            return config
+            
+        except json.JSONDecodeError as e:
+            raise ConfigurationError(f"Invalid JSON in configuration file: {str(e)}")
+        except Exception as e:
+            raise ConfigurationError(f"Failed to load configuration: {str(e)}")
+    
+    @staticmethod
+    def save_to_file(config: Dict[str, Any], config_path: Path):
+        """Save configuration to file"""
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=2)
+        except Exception as e:
+            raise ConfigurationError(f"Failed to save configuration: {str(e)}")
+    
+    @staticmethod
+    def merge_configs(base_config: Dict[str, Any], user_config: Dict[str, Any]) -> Dict[str, Any]:
+        """Merge user configuration with base configuration"""
+        def deep_merge(d1: Dict, d2: Dict) -> Dict:
+            result = d1.copy()
+            for key, value in d2.items():
+                if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                    result[key] = deep_merge(result[key], value)
+                else:
+                    result[key] = value
+            return result
         
-    Returns:
-        Merged configuration dictionary
-    """
-    config = DEFAULT_CONFIG.copy()
-    
-    # Load from file if provided
-    if config_path and config_path.exists():
-        with open(config_path, 'r') as f:
-            file_config = json.load(f)
-            config = deep_merge(config, file_config)
-    
-    # Override with user config if provided
-    if user_config:
-        config = deep_merge(config, user_config)
-    
-    return config
-
-def deep_merge(d1: Dict, d2: Dict) -> Dict:
-    """
-    Deep merge two dictionaries
-    
-    Args:
-        d1: Base dictionary
-        d2: Dictionary to merge into d1
-        
-    Returns:
-        Merged dictionary
-    """
-    for k, v in d2.items():
-        if k in d1 and isinstance(d1[k], dict) and isinstance(v, dict):
-            deep_merge(d1[k], v)
-        else:
-            d1[k] = v
-    return d1
+        return deep_merge(base_config, user_config)
 
 def validate_config(config: Dict) -> bool:
     """

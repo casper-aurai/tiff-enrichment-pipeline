@@ -55,6 +55,7 @@ COPY --chown=pipeline:pipeline requirements.txt .
 
 # Install Python dependencies in virtual environment
 RUN pip3 install --no-cache-dir --upgrade pip && \
+    pip3 install --no-cache-dir GDAL==$(gdal-config --version) && \
     pip3 install --no-cache-dir \
     --find-links /usr/lib/python3/dist-packages \
     --prefer-binary \

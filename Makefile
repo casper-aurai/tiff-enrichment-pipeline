@@ -117,6 +117,34 @@ down: ## Stop and remove all containers
 restart: down up ## Restart the pipeline
 	@echo "$(GREEN)✓ Pipeline restarted$(NC)"
 
+.PHONY: fullcycle
+fullcycle: ## Complete cleanup and rebuild of the entire system
+	@echo "$(RED)⚠️  WARNING: This will remove ALL containers, images, volumes, and cache!$(NC)"
+	@read -p "Are you sure? Type 'yes' to continue: " confirm; \
+	if [ "$$confirm" = "yes" ]; then \
+		echo "$(CYAN)Starting full system cleanup and rebuild...$(NC)"; \
+		echo "$(YELLOW)1. Stopping all containers...$(NC)"; \
+		docker-compose -p $(COMPOSE_PROJECT) --profile admin --profile monitoring --profile watcher down --remove-orphans; \
+		echo "$(YELLOW)2. Removing all containers...$(NC)"; \
+		docker ps -a -q | xargs -r docker rm -f; \
+		echo "$(YELLOW)3. Removing all images...$(NC)"; \
+		docker images -q | xargs -r docker rmi -f; \
+		echo "$(YELLOW)4. Removing all volumes...$(NC)"; \
+		docker volume ls -q | xargs -r docker volume rm; \
+		echo "$(YELLOW)5. Removing all networks...$(NC)"; \
+		docker network prune -f; \
+		echo "$(YELLOW)6. Cleaning Docker system...$(NC)"; \
+		docker system prune -af --volumes; \
+		echo "$(YELLOW)7. Rebuilding from scratch...$(NC)"; \
+		docker-compose -p $(COMPOSE_PROJECT) build --no-cache; \
+		echo "$(YELLOW)8. Starting all services...$(NC)"; \
+		docker-compose -p $(COMPOSE_PROJECT) --profile admin --profile monitoring --profile watcher up -d; \
+		echo "$(GREEN)✓ Full cycle completed successfully!$(NC)"; \
+		echo "$(YELLOW)Check status with: make status$(NC)"; \
+	else \
+		echo "$(YELLOW)Full cycle cancelled$(NC)"; \
+	fi
+
 # =============================================================================
 # STATUS AND MONITORING
 # =============================================================================
