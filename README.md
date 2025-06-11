@@ -4,6 +4,28 @@ A comprehensive Docker-based deployment setup for the TIFF enrichment pipeline w
 
 ## 🚀 Quick Start
 
+### Option 1: Using Published Images (Recommended)
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/casper-aurai/tiff-enrichment-pipeline.git
+cd tiff-enrichment-pipeline
+
+# 2. Initialize the project
+make init
+
+# 3. Edit your environment configuration  
+vim .env
+
+# 4. Start with published images (no build required)
+make up-published
+
+# 5. Check status
+make status
+```
+
+### Option 2: Building from Source
+
 ```bash
 # 1. Initialize the project
 make init
@@ -11,15 +33,51 @@ make init
 # 2. Edit your environment configuration
 vim .env
 
-# 3. Start the pipeline
+# 3. Build and start the pipeline
+make build
 make up
 
 # 4. Check status
 make status
-
-# 5. Process sample files
-make process-sample
 ```
+
+## 📦 **Container Images**
+
+Pre-built multi-architecture images are available:
+
+- **GitHub Container Registry**: `ghcr.io/casper-aurai/tiff-enrichment-pipeline:latest`
+- **Docker Hub**: `casper-aurai/tiff-enrichment-pipeline:latest`
+
+### **Available Tags**
+
+| Tag | Description | Use Case |
+|-----|-------------|----------|
+| `latest` | Latest stable release | Production |
+| `develop` | Development build | Testing |
+| `v1.2.3` | Specific version | Production (pinned) |
+
+### **Supported Architectures**
+
+- ✅ `linux/amd64` (Intel/AMD 64-bit)
+- ✅ `linux/arm64` (Apple Silicon, ARM servers)
+
+### **Using Published Images**
+
+```bash
+# Pull latest images
+make pull
+
+# Start with published images
+make up-published
+
+# Start with admin tools
+make up-published-full
+
+# Start everything (admin + monitoring)
+make up-published-all
+```
+
+For detailed container publishing information, see [CONTAINER_PUBLISHING.md](CONTAINER_PUBLISHING.md).
 
 ## 📋 Prerequisites
 
@@ -110,16 +168,20 @@ tiff-pipeline/
 
 ```bash
 # Basic pipeline only
-make up
+make up                    # Build from source
+make up-published         # Use published images
 
 # With admin tools
-make up-full
+make up-full              # Build from source
+make up-published-full    # Use published images
 
 # With monitoring
 make up-monitoring
+make up-published-monitoring
 
 # Everything (admin + monitoring + file watcher)
 make up-all
+make up-published-all
 ```
 
 ### Production Deployment
@@ -148,6 +210,20 @@ Check your `.env` file for:
 - Grafana: `admin` / `GRAFANA_PASSWORD`
 
 ## 🔧 Common Commands
+
+### Container Management
+
+```bash
+# Published images
+make pull                 # Pull latest images
+make up-published        # Start with published images
+make up-published-full   # Start with admin tools
+
+# Local build
+make build               # Build images from source
+make up                  # Start with local build
+make up-full            # Start with admin tools
+```
 
 ### File Operations
 
@@ -309,7 +385,7 @@ Production deployment includes resource limits:
 3. **Restrict network access** to admin interfaces
 4. **Regular backups** with `make db-backup`
 5. **Monitor logs** for suspicious activity
-6. **Keep images updated** with `docker-compose pull`
+6. **Keep images updated** with `make pull && make restart`
 
 ### Network Security
 
@@ -358,6 +434,8 @@ SELECT COUNT(*) FROM pipeline.processing_runs;
 
 ## 📚 Additional Resources
 
+- [Container Publishing Guide](CONTAINER_PUBLISHING.md) - Detailed container registry setup
+- [Quick Start Guide](QUICKSTART.md) - 5-minute setup guide
 - [GDAL Documentation](https://gdal.org/programs/index.html)
 - [PostGIS Manual](https://postgis.net/documentation/)
 - [Docker Compose Reference](https://docs.docker.com/compose/)
