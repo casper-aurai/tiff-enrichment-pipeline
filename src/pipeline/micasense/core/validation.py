@@ -111,6 +111,40 @@ class MicaSenseValidator:
             
             # Calculate surface area
             surface_m2 = abs(width_m * height_m)
+            
+            # Calculate GSD if we have the necessary information
+            if crs_calc_details and 'gsd_x' in crs_calc_details and 'gsd_y' in crs_calc_details:
+                gsd_x = crs_calc_details['gsd_x']
+                gsd_y = crs_calc_details['gsd_y']
+                info.append(f"GSD X: {gsd_x:.6f} m/pixel")
+                info.append(f"GSD Y: {gsd_y:.6f} m/pixel")
+                
+                # Add intermediate calculation steps
+                if 'altitude' in crs_calc_details:
+                    info.append(f"Altitude: {crs_calc_details['altitude']:.2f} m")
+                if 'focal_length' in crs_calc_details:
+                    info.append(f"Focal length: {crs_calc_details['focal_length']:.2f} mm")
+                if 'sensor_width' in crs_calc_details:
+                    info.append(f"Sensor width: {crs_calc_details['sensor_width']:.2f} mm")
+                if 'sensor_height' in crs_calc_details:
+                    info.append(f"Sensor height: {crs_calc_details['sensor_height']:.2f} mm")
+                
+                # Calculate expected vs actual pixel sizes
+                expected_pixel_width = gsd_x / (2 * math.pi * 6371000 * math.cos(math.radians(lat0)) / 360)
+                expected_pixel_height = gsd_y / (2 * math.pi * 6371000 / 360)
+                actual_pixel_width = abs(transform.a)
+                actual_pixel_height = abs(transform.e)
+                
+                info.append(f"Expected pixel width (degrees): {expected_pixel_width:.10f}")
+                info.append(f"Actual pixel width (degrees): {actual_pixel_width:.10f}")
+                info.append(f"Expected pixel height (degrees): {expected_pixel_height:.10f}")
+                info.append(f"Actual pixel height (degrees): {actual_pixel_height:.10f}")
+                
+                # Calculate difference percentage
+                width_diff_pct = abs(expected_pixel_width - actual_pixel_width) / expected_pixel_width * 100
+                height_diff_pct = abs(expected_pixel_height - actual_pixel_height) / expected_pixel_height * 100
+                info.append(f"Pixel width difference: {width_diff_pct:.2f}%")
+                info.append(f"Pixel height difference: {height_diff_pct:.2f}%")
         else:
             # If not in WGS84, use transform values
             surface_m2 = abs(transform.a * transform.e * width * height)

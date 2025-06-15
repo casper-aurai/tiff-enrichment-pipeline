@@ -159,7 +159,15 @@ class MicaSenseProcessor:
                     'pixel_size_x': pixel_size_x,
                     'pixel_size_y': pixel_size_y,
                     'center_lon': center_lon,
-                    'center_lat': center_lat
+                    'center_lat': center_lat,
+                    'altitude': alt,
+                    'focal_length': focal_length,
+                    'sensor_width': sensor_width,
+                    'sensor_height': sensor_height,
+                    'image_width': width,
+                    'image_height': height,
+                    'meters_per_degree_lon': meters_per_degree_lon,
+                    'meters_per_degree_lat': meters_per_degree_lat
                 }
                 
         except Exception as e:
@@ -234,11 +242,6 @@ class MicaSenseProcessor:
             if not calibrated_path:
                 raise CalibrationError("Failed to calibrate image")
             
-            # Now validate the transformed and calibrated image
-            issues = self.validator.validate_tiff_file(Path(calibrated_path))
-            if issues:
-                raise ValidationError(f"Validation failed after transformation: {', '.join(issues)}")
-            
             # Calculate indices using calibrated image (CRS/transform will be propagated)
             indices_paths = self._calculate_indices(calibrated_path, image_set)
             if not indices_paths:
@@ -254,6 +257,32 @@ class MicaSenseProcessor:
                 'processing_timestamp': datetime.now().isoformat()
             }
             self._save_metadata(metadata)
+            
+            # Final validation of all processed outputs
+            validation_results = {}
+            
+            # Validate aligned image
+            aligned_issues = self.validator.validate_tiff_file(Path(aligned_path))
+            if aligned_issues:
+                validation_results['aligned'] = aligned_issues
+            
+            # Validate calibrated image
+            calibrated_issues = self.validator.validate_tiff_file(Path(calibrated_path))
+            if calibrated_issues:
+                validation_results['calibrated'] = calibrated_issues
+            
+            # Validate index files
+            for index_name, index_path in indices_paths.items():
+                index_issues = self.validator.validate_tiff_file(Path(index_path))
+                if index_issues:
+                    validation_results[f'index_{index_name}'] = index_issues
+            
+            # If any validation failed, raise error with all issues
+            if validation_results:
+                error_msg = "Validation failed for processed files:\n"
+                for file_type, issues in validation_results.items():
+                    error_msg += f"\n{file_type}:\n" + "\n".join(f"  - {issue}" for issue in issues)
+                raise ValidationError(error_msg)
             
             return {
                 'status': 'success',

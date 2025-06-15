@@ -173,6 +173,14 @@ class TIFFPipelineMain:
                     'GPSMapDatum': 'WGS84'
                 }
             },
+            'camera_params': {
+                'focal_length': 5.4,  # mm
+                'sensor_width': 4.8,  # mm
+                'sensor_height': 3.6,  # mm
+                'pixel_size': 3.75,  # μm
+                'model': 'RedEdge-M',
+                'manufacturer': 'MicaSense'
+            },
             'band_config': {
                 1: {
                     'name': 'Blue',
