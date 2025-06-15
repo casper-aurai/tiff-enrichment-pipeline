@@ -325,8 +325,10 @@ class MicaSenseProcessor:
                 for idx, band_num in enumerate(sorted(image_set["bands"].keys())):
                     band_path = image_set["bands"][band_num]
                     with self.rasterio_manager.safe_open(Path(band_path)) as src:
+                        raw_data = src.read(1).astype('float32')
+                        self.logger.info(f"[STATS] Raw input band {band_num}: min={raw_data.min()}, max={raw_data.max()}, mean={raw_data.mean()}, dtype={raw_data.dtype}")
                         if band_num == 3:  # Reference band
-                            data = src.read(1).astype('float32')
+                            data = raw_data
                         else:
                             # Reproject to match reference
                             data = np.empty((height, width), dtype='float32')
@@ -380,7 +382,7 @@ class MicaSenseProcessor:
                 all_bands = np.zeros((src.count, src.height, src.width), dtype='float32')
                 for band_num in range(1, src.count + 1):
                     data = src.read(band_num).astype('float32')
-                    calibrated_data = data * 10000  # scale to reflectance * 10000
+                    calibrated_data = data  # No scaling
                     calibrated_data = np.clip(calibrated_data, 0, 65535)
                     all_bands[band_num - 1, :, :] = calibrated_data
                 
