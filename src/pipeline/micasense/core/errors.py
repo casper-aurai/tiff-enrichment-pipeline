@@ -37,4 +37,8 @@ class CalibrationError(MicaSenseError):
 
 class TimeoutError(MicaSenseError):
     """Operation timeout errors"""
+    pass
+
+class GPSError(MicaSenseError):
+    """GPS extraction errors"""
     pass 

@@ -6,11 +6,15 @@ Processes MicaSense images from input directory and outputs results to specified
 
 import argparse
 import logging
+import logging.handlers
 import sys
 from pathlib import Path
 from datetime import datetime
 import json
 from typing import Dict, Any
+import rasterio
+import numpy as np
+import traceback
 
 from pipeline.micasense.core.processor import MicaSenseProcessor
 from pipeline.micasense.core.config import MicaSenseConfig

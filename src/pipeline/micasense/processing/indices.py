@@ -77,15 +77,45 @@ class VegetationIndices:
     def _calculate_ndvi(self, nir: np.ndarray, red: np.ndarray, 
                        image_set: Dict, profile: Dict) -> str:
         """Calculate Normalized Difference Vegetation Index"""
+        # Ensure data is in float32 and handle potential division by zero
+        nir = nir.astype('float32')
+        red = red.astype('float32')
+        
+        # Add small epsilon to avoid division by zero
+        epsilon = 1e-6
+        
+        # Calculate NDVI with improved handling of edge cases
+        denominator = nir + red + epsilon
         ndvi = np.divide(
             (nir - red),
-            (nir + red),
+            denominator,
             out=np.zeros_like(nir),
-            where=(nir + red) != 0
+            where=denominator > epsilon
         )
+        
+        # Clip values to valid NDVI range
+        ndvi = np.clip(ndvi, -1.0, 1.0)
+        
+        # Mask out invalid values (e.g., where denominator was too small)
+        ndvi[denominator <= epsilon] = -1.0
         
         output_path = self.output_dir / "indices" / f"{image_set['name']}_NDVI.tif"
         self._save_index(ndvi, output_path, profile, "NDVI")
+        
+        # Log statistics about vegetation coverage
+        veg_mask = (ndvi > 0.2) & (ndvi <= 1.0)
+        high_veg_mask = (ndvi > 0.5) & (ndvi <= 1.0)
+        
+        veg_percentage = float(np.sum(veg_mask) / ndvi.size * 100)
+        high_veg_percentage = float(np.sum(high_veg_mask) / ndvi.size * 100)
+        
+        self.logger.info(f"NDVI statistics for {image_set['name']}:")
+        self.logger.info(f"  Vegetation coverage (>0.2): {veg_percentage:.2f}%")
+        self.logger.info(f"  High vegetation (>0.5): {high_veg_percentage:.2f}%")
+        self.logger.info(f"  Mean NDVI: {np.mean(ndvi):.3f}")
+        self.logger.info(f"  Min NDVI: {np.min(ndvi):.3f}")
+        self.logger.info(f"  Max NDVI: {np.max(ndvi):.3f}")
+        
         return str(output_path)
     
     def _calculate_ndre(self, nir: np.ndarray, red_edge: np.ndarray,

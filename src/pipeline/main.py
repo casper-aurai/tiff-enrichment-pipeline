@@ -18,6 +18,7 @@ sys.path.append('/app/src')
 
 from pipeline.micasense.core.processor import MicaSenseProcessor
 from pipeline.health import health_check
+from pipeline.utils.gps_utils import extract_gps_info
 
 # Setup logging
 logging.basicConfig(
@@ -129,23 +130,33 @@ class TIFFPipelineMain:
             'vegetation_indices': {
                 'ndvi': True,
                 'ndre': True,
-                'gndvi': True
+                'gndvi': True,
+                'savi': True,
+                'msavi': True,
+                'evi': True
             },
             'quality_control': {
                 'check_metadata': True,
                 'check_dimensions': True,
-                'check_data_range': True
+                'check_data_range': True,
+                'validate_reflectance_range': True,
+                'check_zero_ratio': True
             },
             'output_options': {
                 'save_aligned': True,
                 'save_calibrated': True,
                 'save_indices': True,
                 'save_metadata': True,
-                'save_quality_report': True
+                'save_quality_report': True,
+                'save_visualizations': True,
+                'generate_thumbnails': True
             },
             'processing': {
                 'max_workers': self.max_workers,
-                'batch_size': self.batch_size
+                'batch_size': self.batch_size,
+                'radiometric_calibration': True,
+                'band_alignment': True,
+                'generate_indices': True
             },
             'logging': {
                 'level': 'INFO',
@@ -156,7 +167,7 @@ class TIFFPipelineMain:
                 'valid_data_types': ['uint16', 'uint8'],
                 'data_range': (0, 65535),
                 'max_zero_ratio': 0.5,
-                'required_metadata': ['DateTime'],  # Only require DateTime
+                'required_metadata': ['DateTime'],
                 'known_metadata': {
                     'CameraModel': 'MicaSense RedEdge-M',
                     'GPSMapDatum': 'WGS84'
@@ -209,21 +220,40 @@ class TIFFPipelineMain:
         # Group files into sets
         file_sets = self._group_micasense_files(files)
         
-        # Process first set as a test
-        if file_sets:
-            first_set = file_sets[0]
-            summary = processor.process_single_set(first_set)
-        else:
-            summary = {
-                'status': 'error',
-                'error': 'No complete MicaSense sets found'
-            }
+        # Process all sets
+        successful = 0
+        failed = 0
+        results = []
+        
+        for image_set in file_sets:
+            try:
+                result = processor.process_single_set(image_set)
+                if result['status'] == 'success':
+                    successful += 1
+                else:
+                    failed += 1
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Failed to process {image_set['name']}: {e}")
+                failed += 1
+                results.append({
+                    'name': image_set['name'],
+                    'status': 'failed',
+                    'error': str(e)
+                })
+        
+        summary = {
+            'status': 'completed',
+            'total_sets': len(file_sets),
+            'successful': successful,
+            'failed': failed,
+            'results': results
+        }
         
         logger.info(f"MicaSense processing completed:")
         logger.info(f"  - Total sets: {len(file_sets)}")
-        logger.info(f"  - Status: {summary.get('status', 'unknown')}")
-        if 'error' in summary:
-            logger.error(f"  - Error: {summary['error']}")
+        logger.info(f"  - Successful: {successful}")
+        logger.info(f"  - Failed: {failed}")
         
         return summary
     
@@ -323,6 +353,13 @@ class TIFFPipelineMain:
                 tags = src.tags()
                 if tags:
                     metadata['tags'] = tags
+                
+                # Extract robust GPS info
+                gps_info = extract_gps_info(str(tiff_file))
+                if gps_info:
+                    metadata['gps_info'] = gps_info
+                else:
+                    metadata['gps_info'] = None
                 
                 result['metadata'] = metadata
             

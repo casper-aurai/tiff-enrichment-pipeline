@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import json
 from datetime import datetime
+import traceback
 
 class ImageVisualizer:
     """Handles visualization of MicaSense images and indices"""
@@ -27,11 +28,17 @@ class ImageVisualizer:
         self.thumbnails_dir.mkdir(parents=True, exist_ok=True)
         self.visualizations_dir.mkdir(parents=True, exist_ok=True)
         
-        # Define colormaps
+        # Define colormaps for different indices
         self.ndvi_cmap = LinearSegmentedColormap.from_list(
-            'ndvi', ['red', 'yellow', 'green'], N=256)
+            'ndvi', ['darkred', 'red', 'yellow', 'lightgreen', 'green', 'darkgreen'], N=256)
         self.ndre_cmap = LinearSegmentedColormap.from_list(
-            'ndre', ['red', 'yellow', 'green'], N=256)
+            'ndre', ['darkred', 'red', 'yellow', 'lightgreen', 'green', 'darkgreen'], N=256)
+        self.ndwi_cmap = LinearSegmentedColormap.from_list(
+            'ndwi', ['blue', 'white', 'green'], N=256)
+        self.evi_cmap = LinearSegmentedColormap.from_list(
+            'evi', ['red', 'yellow', 'green'], N=256)
+        self.savi_cmap = LinearSegmentedColormap.from_list(
+            'savi', ['red', 'yellow', 'green'], N=256)
     
     def generate_thumbnails(self, image_path: str, image_set: Dict) -> Dict[str, str]:
         """
@@ -83,14 +90,43 @@ class ImageVisualizer:
                 with rasterio.open(index_path) as src:
                     index_data = src.read(1)
                     
-                    # Select appropriate colormap
-                    cmap = self.ndvi_cmap if index_name in ['NDVI', 'GNDVI'] else self.ndre_cmap
+                    # Select appropriate colormap and value range
+                    if index_name in ['NDVI', 'GNDVI', 'NDRE']:
+                        cmap = self.ndvi_cmap
+                        vmin, vmax = -0.2, 1.0  # Adjusted range to better show vegetation
+                    elif index_name == 'NDWI':
+                        cmap = self.ndwi_cmap
+                        vmin, vmax = -1, 1
+                    elif index_name == 'EVI':
+                        cmap = self.evi_cmap
+                        vmin, vmax = -1, 1
+                    elif index_name in ['SAVI', 'MSAVI', 'OSAVI']:
+                        cmap = self.savi_cmap
+                        vmin, vmax = -1, 1
+                    else:
+                        cmap = 'viridis'
+                        vmin, vmax = np.min(index_data), np.max(index_data)
                     
                     # Create visualization
                     fig, ax = plt.subplots(figsize=(10, 10))
-                    im = ax.imshow(index_data, cmap=cmap, vmin=-1, vmax=1)
+                    im = ax.imshow(index_data, cmap=cmap, vmin=vmin, vmax=vmax)
                     plt.colorbar(im, ax=ax, label=index_name)
                     ax.set_title(f"{index_name} - {image_set['name']}")
+                    
+                    # Add statistics as text
+                    stats = {
+                        'Mean': np.mean(index_data),
+                        'Std': np.std(index_data),
+                        'Min': np.min(index_data),
+                        'Max': np.max(index_data),
+                        'Vegetation %': float(np.sum((index_data > 0.2) & (index_data <= 1.0)) / index_data.size * 100),
+                        'High Veg %': float(np.sum((index_data > 0.5) & (index_data <= 1.0)) / index_data.size * 100)
+                    }
+                    stats_text = '\n'.join([f"{k}: {v:.3f}" for k, v in stats.items()])
+                    ax.text(0.02, 0.98, stats_text,
+                           transform=ax.transAxes,
+                           verticalalignment='top',
+                           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
                     
                     # Save visualization
                     vis_path = self.visualizations_dir / f"{image_set['name']}_{index_name}_vis.png"
@@ -103,6 +139,7 @@ class ImageVisualizer:
             
         except Exception as e:
             self.logger.error(f"Failed to generate visualizations for {image_set['name']}: {e}")
+            self.logger.error(traceback.format_exc())
             
         return visualization_paths
     

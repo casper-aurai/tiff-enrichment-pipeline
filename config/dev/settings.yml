@@ -1,2 +1,45 @@
 environment: development
 debug: true
+
+vegetation_indices:
+  ndvi: true
+  ndre: true
+  gndvi: true
+  savi: true
+  msavi: true
+  evi: true
+  osavi: true
+  ndwi: true
+
+quality_control:
+  check_band_alignment: true
+  validate_reflectance_range: true
+  generate_histograms: true
+  validate_dimensions: true
+  check_zero_ratio: true
+  validate_metadata: true
+  check_data_range: true
+
+output_options:
+  save_individual_bands: true
+  generate_thumbnails: true
+  overwrite_existing: false
+  save_quality_reports: true
+  save_metadata: true
+  save_visualizations: true
+  save_processing_report: true
+
+processing:
+  radiometric_calibration: true
+  band_alignment: true
+  generate_indices: true
+  max_workers: 4
+  batch_size: 10
+  timeout_seconds: 300
+  retry_attempts: 2
+
+logging:
+  level: INFO
+  file: logs/processing.log
+  max_file_size: 10485760 # 10MB
+  backup_count: 5

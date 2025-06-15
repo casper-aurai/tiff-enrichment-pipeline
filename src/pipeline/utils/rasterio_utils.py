@@ -179,8 +179,17 @@ class RasterioManager:
             if not src.crs:
                 return False, "Missing CRS information"
             
-            if not src.transform.is_identity:
-                return False, "Invalid transform"
+            # Check if transform is valid (not None and has valid values)
+            if src.transform is None:
+                return False, "Missing transform"
+            
+            # Check if transform values are valid numbers
+            try:
+                transform_values = src.transform.to_gdal()
+                if any(not isinstance(x, (int, float)) or np.isnan(x) for x in transform_values):
+                    return False, "Transform contains invalid values"
+            except Exception as e:
+                return False, f"Invalid transform: {str(e)}"
             
             if src.count == 0:
                 return False, "No bands found"
@@ -223,29 +232,27 @@ class RasterioManager:
                         chunk = callback(chunk)
                     yield chunk
     
-    def safe_write(self, file_path: Path, data: np.ndarray,
-                  profile: Dict[str, Any]) -> bool:
-        """Safely write data to a rasterio dataset"""
-        start_time = time.time()
-        lock_path = file_path.with_suffix('.lock')
-        
+    def safe_write(self, output_path: Path, data: np.ndarray, profile: Dict) -> bool:
+        """Safely write data to a raster file"""
         try:
-            with FileLock(lock_path):
-                with rasterio.open(file_path, 'w', **profile) as dst:
-                    dst.write(data)
-                return True
+            # Ensure data is 3D (bands, height, width)
+            if len(data.shape) == 2:
+                data = np.expand_dims(data, axis=0)
+            
+            # Update profile with correct dimensions
+            profile.update({
+                'height': data.shape[1],
+                'width': data.shape[2],
+                'count': data.shape[0]
+            })
+            
+            with rasterio.open(output_path, 'w', **profile) as dst:
+                dst.write(data)
+            return True
         except Exception as e:
             self.metrics.record_error('file_write')
-            logger.error(f"Failed to write file {file_path}: {e}")
+            logger.error(f"Failed to write file {output_path}: {str(e)}")
             return False
-        finally:
-            duration = time.time() - start_time
-            self.metrics.record_operation('file_write', duration)
-            if lock_path.exists():
-                try:
-                    os.remove(lock_path)
-                except OSError:
-                    pass
     
     def get_statistics(self, file_path: Path) -> Dict[str, Dict[str, float]]:
         """Calculate statistics for each band in a dataset"""

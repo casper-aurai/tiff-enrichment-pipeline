@@ -24,13 +24,12 @@ def main(input_dir, csv_out, json_out):
     results = []
     for file_path in tiff_files:
         cmd = [
-            'docker', 'compose', 'run', '--rm', 'pipeline',
-            'exiftool', '-gps:all', str(file_path)
+            'exiftool',
+            '-gps:all',
+            str(file_path)
         ]
         try:
-            env = os.environ.copy()
-            env['COMPOSE_BAKE'] = 'true'
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, env=env)
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             gps = parse_gps_output(proc.stdout)
             results.append({
                 'file': str(file_path),

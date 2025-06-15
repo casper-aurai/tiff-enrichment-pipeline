@@ -35,6 +35,11 @@ class MicaSenseValidator:
                     for tag, value in img.tag_v2.items():
                         tag_name = TAGS.get(tag, tag)
                         metadata[tag_name] = value
+                    # Map alternate tag names
+                    if 'Date/Time Original' in metadata:
+                        metadata['DateTime'] = metadata['Date/Time Original']
+                    if 'Camera Model Name' in metadata:
+                        metadata['CameraModel'] = metadata['Camera Model Name']
             else:
                 # Use exif library for other formats (e.g., JPEG)
                 with open(file_path, 'rb') as image_file:
