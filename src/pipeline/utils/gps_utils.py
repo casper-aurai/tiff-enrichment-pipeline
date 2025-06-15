@@ -70,7 +70,12 @@ def extract_gps_info(image_path: str) -> Optional[Dict]:
         logger.info(f"Parsed latitude: {lat} from '{lat_str}'")
         logger.info(f"Parsed longitude: {lon} from '{lon_str}'")
         try:
-            alt = float(alt_str) if alt_str else None
+            # Extract numeric part from altitude string (e.g., '26.9 m Above Sea Level')
+            if alt_str:
+                match = re.search(r"[-+]?[0-9]*\.?[0-9]+", alt_str)
+                alt = float(match.group(0)) if match else None
+            else:
+                alt = None
         except Exception:
             alt = None
         timestamp = None

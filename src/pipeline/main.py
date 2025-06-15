@@ -455,6 +455,74 @@ class TIFFPipelineMain:
         with open(summary_path, 'w') as f:
             json.dump(summary, f, indent=2, default=str)
         
+        # --- Post-run validation step ---
+        try:
+            from pipeline.micasense.core.validation import MicaSenseValidator
+            import csv
+            import rasterio
+            import numpy as np
+            
+            validator = MicaSenseValidator(self._get_default_config(), logger)
+            output_tiffs = list(self.output_dir.glob('**/*.tif')) + list(self.output_dir.glob('**/*.TIF'))
+            validation_results = []
+            # Define bounding box for the Netherlands (approximate)
+            NL_BOUNDS = {
+                'min_lon': 3.0,
+                'max_lon': 7.3,
+                'min_lat': 50.7,
+                'max_lat': 53.6
+            }
+            for tiff_path in output_tiffs:
+                issues = validator.validate_tiff_file(tiff_path)
+                geo_issues = []
+                try:
+                    with rasterio.open(tiff_path) as src:
+                        # Check CRS
+                        crs = src.crs.to_string() if src.crs else None
+                        if not crs or (crs not in ["EPSG:4326", "WGS84", "EPSG:28992"]):
+                            geo_issues.append(f"Invalid or missing CRS: {crs}")
+                        # Check transform and pixel size
+                        transform = src.transform
+                        pixel_width = transform.a
+                        pixel_height = abs(transform.e)
+                        if not (0.00001 < pixel_width < 0.01):
+                            geo_issues.append(f"Unusual pixel width: {pixel_width}")
+                        if not (0.00001 < pixel_height < 0.01):
+                            geo_issues.append(f"Unusual pixel height: {pixel_height}")
+                        # Check bounding box
+                        bounds = src.bounds
+                        corners = [
+                            (bounds.left, bounds.top),
+                            (bounds.right, bounds.top),
+                            (bounds.right, bounds.bottom),
+                            (bounds.left, bounds.bottom)
+                        ]
+                        for lon, lat in corners:
+                            if not (NL_BOUNDS['min_lon'] <= lon <= NL_BOUNDS['max_lon'] and NL_BOUNDS['min_lat'] <= lat <= NL_BOUNDS['max_lat']):
+                                geo_issues.append(f"Corner out of NL bounds: ({lon}, {lat})")
+                                break
+                except Exception as e:
+                    geo_issues.append(f"Rasterio error: {str(e)}")
+                validation_results.append({
+                    'file': str(tiff_path),
+                    'issues': issues + geo_issues
+                })
+            # Write validation report (JSON)
+            validation_json = self.output_dir / "validation_report.json"
+            with open(validation_json, 'w') as f:
+                json.dump(validation_results, f, indent=2)
+            # Write validation report (CSV)
+            validation_csv = self.output_dir / "validation_report.csv"
+            with open(validation_csv, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["file", "issues"])
+                for result in validation_results:
+                    writer.writerow([result['file'], "; ".join(result['issues'])])
+            logger.info(f"✅ Post-run validation complete. Report saved: {validation_json}, {validation_csv}")
+        except Exception as e:
+            logger.error(f"Post-run validation failed: {str(e)}")
+        # --- End post-run validation ---
+        
         # Final status
         logger.info("🎉 Pipeline processing completed!")
         logger.info(f"📊 Summary:")
@@ -465,6 +533,22 @@ class TIFFPipelineMain:
         logger.info(f"   - Summary saved: {summary_path}")
         
         return summary
+
+    def _get_default_config(self):
+        # Minimal config for validator
+        return {
+            'validation': {
+                'min_dimensions': (100, 100),
+                'valid_data_types': ['uint16', 'uint8'],
+                'data_range': (0, 65535),
+                'max_zero_ratio': 0.5,
+                'required_metadata': ['DateTime'],
+                'known_metadata': {
+                    'CameraModel': 'MicaSense RedEdge-M',
+                    'GPSMapDatum': 'WGS84'
+                }
+            }
+        }
 
 
 def main():

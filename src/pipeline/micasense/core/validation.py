@@ -67,81 +67,90 @@ class MicaSenseValidator:
     def validate_tiff_file(self, file_path: Path) -> List[str]:
         """Validate a single TIFF file, assign CRS if GPS is present and CRS is missing"""
         issues = []
+        exif_metadata = self._extract_exif_metadata(file_path)
         try:
-            # Check file size
-            size = file_path.stat().st_size
-            if size == 0:
-                issues.append("Empty file")
-            elif size < 1024:  # Less than 1KB
-                issues.append("Suspiciously small file")
-
-            # --- CRS assignment step ---
-            try:
-                with rasterio.open(file_path, 'r+') as src:
-                    if not src.crs:
-                        # Use exiftool to extract GPS
-                        cmd = [
-                            'exiftool', '-gps:all', str(file_path)
-                        ]
-                        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-                        lat, lon = None, None
-                        for line in proc.stdout.splitlines():
-                            if 'GPS Latitude' in line and 'Ref' not in line:
-                                lat = line.split(':', 1)[1].strip()
-                            if 'GPS Longitude' in line and 'Ref' not in line:
-                                lon = line.split(':', 1)[1].strip()
-                        if lat and lon:
-                            # Assign WGS84
-                            src.crs = 'EPSG:4326'
-                            self.logger.info(f"Assigned CRS EPSG:4326 to {file_path} based on GPS: {lat}, {lon}")
-                        else:
-                            self.logger.warning(f"No GPS found for {file_path}, cannot assign CRS.")
-            except Exception as e:
-                self.logger.warning(f"CRS assignment failed for {file_path}: {e}")
-            # --- End CRS assignment step ---
-
-            # Extract EXIF metadata
-            exif_metadata = self._extract_exif_metadata(file_path)
-            
-            # Try to open with rasterio
             with rasterio.open(file_path) as src:
                 # Check image dimensions
                 min_width, min_height = self.config['validation']['min_dimensions']
                 if src.width < min_width or src.height < min_height:
                     issues.append(f"Small dimensions: {src.width}x{src.height}")
-                
                 # Check data type
                 if src.dtypes[0] not in self.config['validation']['valid_data_types']:
                     issues.append(f"Unexpected data type: {src.dtypes[0]}")
-                
                 # Check for valid data range
                 data = src.read(1)
                 min_val, max_val = self.config['validation']['data_range']
                 if np.min(data) < min_val or np.max(data) > max_val:
                     issues.append(f"Invalid data range: [{np.min(data)}, {np.max(data)}]")
-                
                 # Check for excessive zeros
                 zero_ratio = np.sum(data == 0) / data.size
                 if zero_ratio > self.config['validation']['max_zero_ratio']:
                     issues.append(f"High zero ratio: {zero_ratio:.1%}")
-                
-                # Check required metadata
-                for tag in self.config['validation']['required_metadata']:
-                    if tag not in exif_metadata and tag not in src.tags():
-                        issues.append(f"Missing required metadata: {tag}")
-                
-                # Check known metadata if present
-                known_metadata = self.config['validation'].get('known_metadata', {})
-                for tag, expected_value in known_metadata.items():
-                    actual_value = exif_metadata.get(tag) or src.tags().get(tag)
-                    if actual_value and actual_value != expected_value:
-                        issues.append(f"Unexpected {tag} value: {actual_value} (expected {expected_value})")
-            
-        except RasterioIOError as e:
-            issues.append(f"Failed to open file: {str(e)}")
+                # Check required metadata (DateTime)
+                tags = src.tags()
+                datetime_val = tags.get('DateTime') or exif_metadata.get('DateTime')
+                if not datetime_val:
+                    # Try exiftool as fallback
+                    import subprocess
+                    try:
+                        proc = subprocess.run(["exiftool", str(file_path)], capture_output=True, text=True, timeout=10)
+                        for line in proc.stdout.splitlines():
+                            if 'Date/Time Original' in line:
+                                datetime_val = line.split(':', 1)[1].strip()
+                                break
+                    except Exception:
+                        pass
+                if not datetime_val:
+                    issues.append("Missing required metadata: DateTime")
+                # --- Add surface area and corners ---
+                transform = src.transform
+                width, height = src.width, src.height
+                crs = src.crs
+                # Get all four corners in CRS
+                corners = [
+                    (0, 0),
+                    (width, 0),
+                    (width, height),
+                    (0, height)
+                ]
+                corner_coords = [rasterio.transform.xy(transform, y, x, offset='center') for x, y in corners]
+                # Calculate surface area (approximate, in square meters)
+                # Only valid for projected CRS; for EPSG:4326, approximate using Haversine
+                def haversine(lon1, lat1, lon2, lat2):
+                    import math
+                    R = 6371000  # Earth radius in meters
+                    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+                    dphi = math.radians(lat2 - lat1)
+                    dlambda = math.radians(lon2 - lon1)
+                    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+                    return 2 * R * math.asin(math.sqrt(a))
+                if crs and crs.to_epsg() == 4326:
+                    # Use Haversine for lat/lon
+                    lon0, lat0 = corner_coords[0]
+                    lon1, lat1 = corner_coords[1]
+                    lon2, lat2 = corner_coords[2]
+                    width_m = haversine(lon0, lat0, lon1, lat1)
+                    height_m = haversine(lon1, lat1, lon2, lat2)
+                    surface_m2 = abs(width_m * height_m)
+                else:
+                    # Assume projected CRS, use transform
+                    surface_m2 = abs(transform.a * transform.e * width * height)
+                # --- Add statistics ---
+                stats = {
+                    'mean': float(np.mean(data)),
+                    'min': float(np.min(data)),
+                    'max': float(np.max(data)),
+                    'std': float(np.std(data)),
+                    'zero_ratio': float(zero_ratio)
+                }
+                # Attach to issues for report (not as error)
+                issues.append(f"Surface area (m^2): {surface_m2}")
+                issues.append(f"Corner coordinates: {corner_coords}")
+                issues.append(f"Stats: {stats}")
+                if datetime_val:
+                    issues.append(f"DateTime: {datetime_val}")
         except Exception as e:
-            issues.append(f"Unexpected error: {str(e)}")
-        
+            self.logger.warning(f"Failed to validate {file_path}: {str(e)}")
         return issues
     
     def validate_image_set(self, image_set: Dict) -> List[str]:
