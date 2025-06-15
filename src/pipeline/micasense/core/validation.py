@@ -13,6 +13,7 @@ from exif import Image
 from datetime import datetime
 import re
 import subprocess
+import math
 
 from .errors import ValidationError
 
@@ -64,7 +65,77 @@ class MicaSenseValidator:
             self.logger.warning(f"Failed to extract EXIF metadata from {file_path}: {str(e)}")
         return metadata
     
-    def validate_tiff_file(self, file_path: Path) -> List[str]:
+    def _get_file_info(self, src, data, datetime_val, crs_calc_details=None) -> List[str]:
+        """Get informational messages about the file"""
+        info = []
+        transform = src.transform
+        width, height = src.width, src.height
+        crs = src.crs
+        
+        # Get all four corners in CRS
+        corners = [
+            (0, 0),
+            (width, 0),
+            (width, height),
+            (0, height)
+        ]
+        corner_coords = [rasterio.transform.xy(transform, y, x, offset='center') for x, y in corners]
+        
+        # Calculate surface area using Haversine formula
+        def haversine(lon1, lat1, lon2, lat2):
+            """
+            Calculate the great circle distance between two points 
+            on the earth (specified in decimal degrees)
+            """
+            # Convert decimal degrees to radians
+            lon1, lat1, lon2, lat2 = map(math.radians, [lon1, lat1, lon2, lat2])
+            
+            # Haversine formula
+            dlon = lon2 - lon1
+            dlat = lat2 - lat1
+            a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+            c = 2 * math.asin(math.sqrt(a))
+            r = 6371000  # Radius of earth in meters
+            return c * r
+            
+        if crs and crs.to_epsg() == 4326:
+            # Calculate distances between corners
+            lon0, lat0 = corner_coords[0]
+            lon1, lat1 = corner_coords[1]
+            lon2, lat2 = corner_coords[2]
+            lon3, lat3 = corner_coords[3]
+            
+            # Calculate width and height in meters
+            width_m = haversine(lon0, lat0, lon1, lat1)
+            height_m = haversine(lon1, lat1, lon2, lat2)
+            
+            # Calculate surface area
+            surface_m2 = abs(width_m * height_m)
+        else:
+            # If not in WGS84, use transform values
+            surface_m2 = abs(transform.a * transform.e * width * height)
+        
+        # Add statistics
+        stats = {
+            'mean': float(np.mean(data)),
+            'min': float(np.min(data)),
+            'max': float(np.max(data)),
+            'std': float(np.std(data)),
+            'zero_ratio': float(np.sum(data == 0) / data.size)
+        }
+        
+        # Add informational messages
+        info.append(f"Surface area (m^2): {surface_m2:.2f}")
+        info.append(f"Corner coordinates: {corner_coords}")
+        info.append(f"Stats: {stats}")
+        if datetime_val:
+            info.append(f"DateTime: {datetime_val}")
+        if crs_calc_details:
+            info.append(f"CRS calculation details: {crs_calc_details}")
+            
+        return info
+
+    def validate_tiff_file(self, file_path: Path, crs_calc_details: dict = None) -> List[str]:
         """Validate a single TIFF file, assign CRS if GPS is present and CRS is missing"""
         issues = []
         exif_metadata = self._extract_exif_metadata(file_path)
@@ -74,84 +145,61 @@ class MicaSenseValidator:
                 min_width, min_height = self.config['validation']['min_dimensions']
                 if src.width < min_width or src.height < min_height:
                     issues.append(f"Small dimensions: {src.width}x{src.height}")
+                
                 # Check data type
                 if src.dtypes[0] not in self.config['validation']['valid_data_types']:
                     issues.append(f"Unexpected data type: {src.dtypes[0]}")
+                
                 # Check for valid data range
                 data = src.read(1)
                 min_val, max_val = self.config['validation']['data_range']
                 if np.min(data) < min_val or np.max(data) > max_val:
                     issues.append(f"Invalid data range: [{np.min(data)}, {np.max(data)}]")
+                
                 # Check for excessive zeros
                 zero_ratio = np.sum(data == 0) / data.size
                 if zero_ratio > self.config['validation']['max_zero_ratio']:
                     issues.append(f"High zero ratio: {zero_ratio:.1%}")
+                
+                # Check CRS and transform
+                if not src.crs:
+                    issues.append("Missing CRS")
+                elif src.crs.to_epsg() != 4326:
+                    issues.append(f"Unexpected CRS: {src.crs}")
+                
+                if src.transform.is_identity:
+                    issues.append("Missing transform")
+                
                 # Check required metadata (DateTime)
                 tags = src.tags()
                 datetime_val = tags.get('DateTime') or exif_metadata.get('DateTime')
                 if not datetime_val:
                     # Try exiftool as fallback
-                    import subprocess
                     try:
                         proc = subprocess.run(["exiftool", str(file_path)], capture_output=True, text=True, timeout=10)
                         for line in proc.stdout.splitlines():
                             if 'Date/Time Original' in line:
                                 datetime_val = line.split(':', 1)[1].strip()
                                 break
+                        if not datetime_val:
+                            for line in proc.stdout.splitlines():
+                                if 'Create Date' in line:
+                                    datetime_val = line.split(':', 1)[1].strip()
+                                    break
                     except Exception:
                         pass
                 if not datetime_val:
                     issues.append("Missing required metadata: DateTime")
-                # --- Add surface area and corners ---
-                transform = src.transform
-                width, height = src.width, src.height
-                crs = src.crs
-                # Get all four corners in CRS
-                corners = [
-                    (0, 0),
-                    (width, 0),
-                    (width, height),
-                    (0, height)
-                ]
-                corner_coords = [rasterio.transform.xy(transform, y, x, offset='center') for x, y in corners]
-                # Calculate surface area (approximate, in square meters)
-                # Only valid for projected CRS; for EPSG:4326, approximate using Haversine
-                def haversine(lon1, lat1, lon2, lat2):
-                    import math
-                    R = 6371000  # Earth radius in meters
-                    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-                    dphi = math.radians(lat2 - lat1)
-                    dlambda = math.radians(lon2 - lon1)
-                    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
-                    return 2 * R * math.asin(math.sqrt(a))
-                if crs and crs.to_epsg() == 4326:
-                    # Use Haversine for lat/lon
-                    lon0, lat0 = corner_coords[0]
-                    lon1, lat1 = corner_coords[1]
-                    lon2, lat2 = corner_coords[2]
-                    width_m = haversine(lon0, lat0, lon1, lat1)
-                    height_m = haversine(lon1, lat1, lon2, lat2)
-                    surface_m2 = abs(width_m * height_m)
-                else:
-                    # Assume projected CRS, use transform
-                    surface_m2 = abs(transform.a * transform.e * width * height)
-                # --- Add statistics ---
-                stats = {
-                    'mean': float(np.mean(data)),
-                    'min': float(np.min(data)),
-                    'max': float(np.max(data)),
-                    'std': float(np.std(data)),
-                    'zero_ratio': float(zero_ratio)
-                }
-                # Attach to issues for report (not as error)
-                issues.append(f"Surface area (m^2): {surface_m2}")
-                issues.append(f"Corner coordinates: {corner_coords}")
-                issues.append(f"Stats: {stats}")
-                if datetime_val:
-                    issues.append(f"DateTime: {datetime_val}")
+                
+                # Get informational messages
+                info = self._get_file_info(src, data, datetime_val, crs_calc_details)
+                
+                # Return both issues and info
+                return issues + info
+                
         except Exception as e:
             self.logger.warning(f"Failed to validate {file_path}: {str(e)}")
-        return issues
+            return [f"Validation error: {str(e)}"]
     
     def validate_image_set(self, image_set: Dict) -> List[str]:
         """Validate a complete image set"""

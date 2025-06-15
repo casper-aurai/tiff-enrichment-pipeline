@@ -9,6 +9,7 @@ from matplotlib.patches import Rectangle
 import geopandas as gpd
 from shapely.geometry import box
 import numpy as np
+import os
 
 def get_tiff_bounds(tiff_path):
     """Extract bounds and CRS from a TIFF file"""
@@ -61,11 +62,18 @@ def create_location_map(tiff_files, output_path):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python scripts/visualize_tiff_locations.py <input_dir> [output_path]")
+        print("Usage: python scripts/visualize_tiff_locations.py <input_dir>")
         sys.exit(1)
     
     input_dir = Path(sys.argv[1])
-    output_path = Path(sys.argv[2]) if len(sys.argv) > 2 else input_dir / "tiff_locations_map.png"
+    if not input_dir.exists():
+        print(f"Input directory {input_dir} does not exist.")
+        sys.exit(1)
+
+    # Always write to maps/ subdirectory of input_dir
+    maps_dir = input_dir / "maps"
+    maps_dir.mkdir(parents=True, exist_ok=True)
+    output_path = maps_dir / "tiff_locations_map.png"
     
     # Find all TIFF files
     tiff_files = list(input_dir.glob('**/*.tif')) + list(input_dir.glob('**/*.TIF'))

@@ -74,117 +74,187 @@ class MicaSenseProcessor:
         path.parent.mkdir(parents=True, exist_ok=True)
         return path
     
-    def _assign_crs(self, image_path: str, gps_info) -> Optional[str]:
-        """Assign Coordinate Reference System to the image"""
-        self.logger.info("[DEBUG] Entering _assign_crs for image: %s", image_path)
+    def _assign_crs(self, image_path: Path, gps_info: dict, camera_params: dict) -> dict:
+        """Assign CRS and transform to an image based on GPS and camera parameters"""
         try:
-            output_name = Path(image_path).stem + "_georeferenced.tif"
-            output_path = self._get_output_path("aligned", output_name)
-            with self.rasterio_manager.safe_open(Path(image_path)) as src:
-                altitude = gps_info.get('altitude', 10.0)
-                if altitude is None:
-                    altitude = 10.0
-                focal_length = 5.5e-3
-                sensor_width = 4.8e-3
-                sensor_height = 3.6e-3
-                image_width = src.width
-                image_height = src.height
-                lat = gps_info['latitude']
-                lon = gps_info['longitude']
-                self.logger.info("[DEBUG] CRS assign params: altitude=%s, focal_length=%s, sensor_width=%s, sensor_height=%s, image_width=%s, image_height=%s, lat=%s, lon=%s", altitude, focal_length, sensor_width, sensor_height, image_width, image_height, lat, lon)
-                gsd_x = (altitude * sensor_width) / (focal_length * image_width)
-                gsd_y = (altitude * sensor_height) / (focal_length * image_height)
-                self.logger.info("[DEBUG] GSD: gsd_x=%s, gsd_y=%s", gsd_x, gsd_y)
-                pixel_size_deg_x = gsd_x / 111320.0
-                pixel_size_deg_y = gsd_y / 111320.0
-                self.logger.info("[DEBUG] Pixel size deg: pixel_size_deg_x=%s, pixel_size_deg_y=%s", pixel_size_deg_x, pixel_size_deg_y)
-                transform = rasterio.transform.from_origin(lon, lat, pixel_size_deg_x, pixel_size_deg_y)
-                self.logger.info("[DEBUG] Transform: %s", transform)
+            with rasterio.open(image_path) as src:
+                # Get image dimensions
+                width, height = src.width, src.height
+                
+                # Extract GPS info
+                lat = gps_info.get('latitude')
+                lon = gps_info.get('longitude')
+                alt = gps_info.get('altitude', 0)
+                
+                if not lat or not lon:
+                    self.logger.warning(f"No GPS coordinates found in {image_path}")
+                    return None
+                
+                # Extract camera parameters
+                focal_length = camera_params.get('focal_length', 5.4)  # mm
+                sensor_width = camera_params.get('sensor_width', 4.8)  # mm
+                sensor_height = camera_params.get('sensor_height', 3.6)  # mm
+                
+                # Calculate ground sample distance (GSD)
+                # GSD = (sensor_width * altitude) / (focal_length * image_width)
+                gsd_x = (sensor_width * alt) / (focal_length * width)
+                gsd_y = (sensor_height * alt) / (focal_length * height)
+                
+                # Calculate pixel size in degrees using proper latitude-based conversion
+                # Earth radius at equator: 6378137.0 meters
+                # Earth radius at poles: 6356752.3 meters
+                # Use average radius for simplicity
+                earth_radius = 6371000.0  # meters
+                
+                # Calculate meters per degree at the given latitude
+                meters_per_degree_lon = (2 * math.pi * earth_radius * math.cos(math.radians(lat))) / 360.0
+                meters_per_degree_lat = (2 * math.pi * earth_radius) / 360.0
+                
+                # Convert GSD to degrees
+                pixel_size_x = gsd_x / meters_per_degree_lon
+                pixel_size_y = gsd_y / meters_per_degree_lat
+                
+                # Calculate the center of the image in geographic coordinates
+                # The GPS coordinates represent the center of the image
+                center_lon = lon
+                center_lat = lat
+                
+                # Calculate the top-left corner coordinates
+                # Move half the image width/height from the center
+                top_left_lon = center_lon - (width * pixel_size_x / 2)
+                top_left_lat = center_lat + (height * pixel_size_y / 2)
+                
+                # Create transform from the top-left corner
+                transform = rasterio.transform.from_origin(
+                    top_left_lon,  # west
+                    top_left_lat,  # north
+                    pixel_size_x,  # x pixel size
+                    -pixel_size_y  # y pixel size (negative because y increases downward)
+                )
+                
+                # Create new profile with CRS and transform
                 profile = src.profile.copy()
                 profile.update({
-                    'crs': rasterio.crs.CRS.from_epsg(4326),
+                    'crs': rasterio.crs.CRS.from_epsg(4326),  # WGS84
                     'transform': transform
                 })
+                
+                # Create output filename
+                output_path = image_path.parent / f"{image_path.stem}_georeferenced{image_path.suffix}"
+                
+                # Write georeferenced image
                 with rasterio.open(output_path, 'w', **profile) as dst:
                     dst.write(src.read())
-                self.logger.info("[DEBUG] Georeferenced output: %s, CRS: %s, Transform: %s", output_path, profile['crs'], profile['transform'])
-                with rasterio.open(output_path) as check:
-                    self.logger.info("[DEBUG] Georeferenced output (actual): %s, CRS: %s, Transform: %s", output_path, check.crs, check.transform)
-                return output_path
+                
+                self.logger.debug(f"Georeferenced output: {output_path}")
+                self.logger.debug(f"Transform: {transform}")
+                self.logger.debug(f"CRS: {profile['crs']}")
+                
+                return {
+                    'output_path': output_path,
+                    'transform': transform,
+                    'crs': profile['crs'],
+                    'gsd_x': gsd_x,
+                    'gsd_y': gsd_y,
+                    'pixel_size_x': pixel_size_x,
+                    'pixel_size_y': pixel_size_y,
+                    'center_lon': center_lon,
+                    'center_lat': center_lat
+                }
+                
         except Exception as e:
-            self.logger.error("Error assigning CRS: %s", str(e))
+            self.logger.error(f"Error assigning CRS to {image_path}: {str(e)}")
             return None
     
     def process_single_set(self, image_set: Dict) -> Dict:
         """Process a single MicaSense image set"""
         try:
-            # Validate image set
-            issues = self.validator.validate_image_set(image_set)
-            if issues:
-                raise ValidationError(f"Validation failed: {', '.join(issues)}")
             # Extract GPS information from reference band using shared utility
             ref_path = image_set["bands"][3]  # Use band 3 as reference
             gps_info = extract_gps_info(ref_path)
             if not gps_info:
                 self.logger.warning(f"No GPS information found in {ref_path}")
-            # Assign CRS and default affine transform to all bands if GPS info is available and missing
+            
+            # Assign CRS and transform to all bands if GPS info is available
             if gps_info:
-                import rasterio
-                from rasterio.crs import CRS
-                from rasterio.transform import from_origin
                 for band_num, band_path in image_set["bands"].items():
                     with rasterio.open(band_path, 'r+') as src:
-                        needs_update = False
                         if not src.crs:
-                            src.crs = CRS.from_epsg(4326)
-                            needs_update = True
+                            src.crs = rasterio.crs.CRS.from_epsg(4326)
                         if not src.transform or src.transform.is_identity:
-                            src.transform = from_origin(gps_info["longitude"], gps_info["latitude"], 1, 1)
-                            needs_update = True
-                        if needs_update:
-                            self.logger.info(f"Assigned CRS EPSG:4326 and default transform to {band_path} before alignment.")
-            # Align images (no CRS/transform propagation here)
+                            # Calculate proper transform based on GPS and camera parameters
+                            width, height = src.width, src.height
+                            focal_length = self.config['camera_params'].get('focal_length', 5.4)
+                            sensor_width = self.config['camera_params'].get('sensor_width', 4.8)
+                            sensor_height = self.config['camera_params'].get('sensor_height', 3.6)
+                            alt = gps_info.get('altitude', 0)
+                            
+                            # Calculate GSD
+                            gsd_x = (sensor_width * alt) / (focal_length * width)
+                            gsd_y = (sensor_height * alt) / (focal_length * height)
+                            
+                            # Calculate pixel size in degrees using proper latitude-based conversion
+                            earth_radius = 6371000.0  # meters
+                            lat = gps_info["latitude"]
+                            
+                            # Calculate meters per degree at the given latitude
+                            meters_per_degree_lon = (2 * math.pi * earth_radius * math.cos(math.radians(lat))) / 360.0
+                            meters_per_degree_lat = (2 * math.pi * earth_radius) / 360.0
+                            
+                            # Convert GSD to degrees
+                            pixel_size_x = gsd_x / meters_per_degree_lon
+                            pixel_size_y = gsd_y / meters_per_degree_lat
+                            
+                            # Calculate the center of the image in geographic coordinates
+                            center_lon = gps_info["longitude"]
+                            center_lat = gps_info["latitude"]
+                            
+                            # Calculate the top-left corner coordinates
+                            top_left_lon = center_lon - (width * pixel_size_x / 2)
+                            top_left_lat = center_lat + (height * pixel_size_y / 2)
+                            
+                            # Create transform from the top-left corner
+                            transform = rasterio.transform.from_origin(
+                                top_left_lon,  # west
+                                top_left_lat,  # north
+                                pixel_size_x,  # x pixel size
+                                -pixel_size_y  # y pixel size (negative because y increases downward)
+                            )
+                            
+                            src.transform = transform
+                            self.logger.info(f"Assigned CRS EPSG:4326 and transform to {band_path}")
+            
+            # Align images (CRS/transform will be propagated)
             aligned_path = self._align_images(image_set)
             if not aligned_path:
                 raise ProcessingError("Failed to align images")
-            # Assign CRS if GPS info is available (for georeferenced output)
-            if gps_info:
-                georeferenced_path = self._assign_crs(aligned_path, gps_info)
-                if georeferenced_path:
-                    aligned_path = georeferenced_path
-            # --- NEW: Re-open georeferenced file and use its profile for all downstream steps ---
-            with self.rasterio_manager.safe_open(Path(aligned_path)) as geo_src:
-                geo_profile = geo_src.profile.copy()
-                geo_crs = geo_src.crs
-                geo_transform = geo_src.transform
-                # Save individual bands if enabled
-                if self.config.get('output_options', {}).get('save_individual_bands', False):
-                    for band_num in range(1, geo_src.count + 1):
-                        band_data = geo_src.read(band_num)
-                        band_name = self.config['band_config'][band_num]['name']
-                        out_path = self._get_output_path("individual_bands", f"{image_set['name']}_{band_name}.tif")
-                        profile = geo_profile.copy()
-                        profile.update({'count': 1, 'crs': geo_crs, 'transform': geo_transform})
-                        with rasterio.open(out_path, 'w', **profile) as dst:
-                            dst.write(band_data, 1)
-                            dst.set_band_description(1, band_name)
-            # Calibrate using georeferenced aligned_path (profile will be propagated)
+            
+            # Calibrate using aligned image (CRS/transform will be propagated)
             calibrated_path = self._calibrate_image(aligned_path)
             if not calibrated_path:
                 raise CalibrationError("Failed to calibrate image")
-            # Calculate indices using georeferenced calibrated_path (profile will be propagated)
+            
+            # Now validate the transformed and calibrated image
+            issues = self.validator.validate_tiff_file(Path(calibrated_path))
+            if issues:
+                raise ValidationError(f"Validation failed after transformation: {', '.join(issues)}")
+            
+            # Calculate indices using calibrated image (CRS/transform will be propagated)
             indices_paths = self._calculate_indices(calibrated_path, image_set)
             if not indices_paths:
                 raise ProcessingError("Failed to calculate indices")
+            
             # Generate quality report
             self._generate_quality_report(image_set)
-            # Save metadata with GPS information
+            
+            # Save metadata
             metadata = {
                 'image_set': image_set,
                 'gps_info': gps_info if gps_info else None,
                 'processing_timestamp': datetime.now().isoformat()
             }
             self._save_metadata(metadata)
+            
             return {
                 'status': 'success',
                 'aligned_path': aligned_path,
@@ -192,6 +262,7 @@ class MicaSenseProcessor:
                 'indices_paths': indices_paths,
                 'gps_info': gps_info if gps_info else None
             }
+            
         except Exception as e:
             self.logger.error(f"Failed to process image set {image_set['name']}: {str(e)}")
             self.logger.error(traceback.format_exc())
@@ -206,16 +277,22 @@ class MicaSenseProcessor:
                 ref_transform = ref_src.transform
                 ref_crs = ref_src.crs
                 height, width = ref_src.height, ref_src.width
+                
                 # Create output path
                 output_name = f"{image_set['name']}_aligned.tif"
                 output_path = self._get_output_path("aligned", output_name)
+                
                 # Prepare for multi-band output
                 ref_profile.update({
                     'count': 5,
-                    'dtype': 'uint16'
+                    'dtype': 'uint16',
+                    'crs': ref_crs,
+                    'transform': ref_transform
                 })
+                
                 # Collect all bands into a single array
                 all_bands = np.zeros((5, height, width), dtype='float32')
+                
                 for idx, band_num in enumerate(sorted(image_set["bands"].keys())):
                     band_path = image_set["bands"][band_num]
                     with self.rasterio_manager.safe_open(Path(band_path)) as src:
@@ -234,15 +311,20 @@ class MicaSenseProcessor:
                                 resampling=rasterio.warp.Resampling.bilinear
                             )
                         all_bands[idx, :, :] = data
+                
                 # Scale and clip to uint16
                 all_bands_uint16 = np.clip(all_bands, 0, 65535).astype('uint16')
+                
+                # Write aligned image with preserved CRS and transform
                 self.rasterio_manager.safe_write(
                     output_path,
                     all_bands_uint16,
                     ref_profile
                 )
+                
                 self.logger.info(f"[DEBUG] Aligned output: {output_path}, CRS: {ref_profile.get('crs')}, Transform: {ref_profile.get('transform')}")
                 return str(output_path)
+                
         except Exception as e:
             self.logger.error(f"Failed to align {image_set['name']}: {str(e)}")
             return None
@@ -253,6 +335,8 @@ class MicaSenseProcessor:
             with self.rasterio_manager.safe_open(Path(image_path)) as src:
                 output_name = Path(image_path).stem + "_calibrated.tif"
                 output_path = self._get_output_path("calibrated", output_name)
+                
+                # Preserve CRS and transform in profile
                 profile = src.profile.copy()
                 profile.update({
                     'dtype': 'uint16',
@@ -260,20 +344,27 @@ class MicaSenseProcessor:
                     'crs': src.crs,
                     'transform': src.transform
                 })
+                
+                # Process all bands
                 all_bands = np.zeros((src.count, src.height, src.width), dtype='float32')
                 for band_num in range(1, src.count + 1):
                     data = src.read(band_num).astype('float32')
                     calibrated_data = data * 10000  # scale to reflectance * 10000
                     calibrated_data = np.clip(calibrated_data, 0, 65535)
                     all_bands[band_num - 1, :, :] = calibrated_data
+                
                 all_bands_uint16 = all_bands.astype('uint16')
+                
+                # Write calibrated image with preserved CRS and transform
                 self.rasterio_manager.safe_write(
                     output_path,
                     all_bands_uint16,
                     profile
                 )
+                
                 self.logger.info(f"[DEBUG] Calibrated output: {output_path}, CRS: {profile.get('crs')}, Transform: {profile.get('transform')}")
                 return str(output_path)
+                
         except Exception as e:
             self.logger.error(f"Failed to calibrate {image_path}: {str(e)}")
             return None

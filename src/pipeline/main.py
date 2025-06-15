@@ -473,7 +473,14 @@ class TIFFPipelineMain:
                 'max_lat': 53.6
             }
             for tiff_path in output_tiffs:
-                issues = validator.validate_tiff_file(tiff_path)
+                # Try to find crs_calc_details for this file
+                crs_calc_details = None
+                for result in processing_results.get('micasense', {}).get('results', []):
+                    if result.get('aligned_path') == str(tiff_path) or \
+                       (result.get('crs_calc_details') and result['crs_calc_details'].get('output_path') == str(tiff_path)):
+                        crs_calc_details = result.get('crs_calc_details')
+                        break
+                issues = validator.validate_tiff_file(tiff_path, crs_calc_details=crs_calc_details)
                 geo_issues = []
                 try:
                     with rasterio.open(tiff_path) as src:
