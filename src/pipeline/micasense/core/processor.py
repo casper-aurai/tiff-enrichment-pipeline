@@ -343,7 +343,9 @@ class MicaSenseProcessor:
                 
                 # Scale and clip to uint16
                 all_bands_uint16 = np.clip(all_bands, 0, 65535).astype('uint16')
-                
+                # Debug: Log stats for aligned bands
+                for i in range(all_bands.shape[0]):
+                    self.logger.info(f"[STATS] Aligned band {i+1}: min={all_bands[i].min()}, max={all_bands[i].max()}, mean={all_bands[i].mean()}, dtype={all_bands[i].dtype}")
                 # Write aligned image with preserved CRS and transform
                 self.rasterio_manager.safe_write(
                     output_path,
@@ -383,7 +385,9 @@ class MicaSenseProcessor:
                     all_bands[band_num - 1, :, :] = calibrated_data
                 
                 all_bands_uint16 = all_bands.astype('uint16')
-                
+                # Debug: Log stats for calibrated bands
+                for i in range(all_bands.shape[0]):
+                    self.logger.info(f"[STATS] Calibrated band {i+1}: min={all_bands[i].min()}, max={all_bands[i].max()}, mean={all_bands[i].mean()}, dtype={all_bands[i].dtype}")
                 # Write calibrated image with preserved CRS and transform
                 self.rasterio_manager.safe_write(
                     output_path,
@@ -416,59 +420,75 @@ class MicaSenseProcessor:
                 vi_config = self.config.get('vegetation_indices', {})
                 if vi_config.get('ndvi', False):
                     ndvi = self._calculate_ndvi(nir, red)
-                    ndvi_uint16 = np.clip((ndvi + 1) * 32767.5, 0, 65535).astype('uint16')
+                    self.logger.info(f"[STATS] NDVI: min={ndvi.min()}, max={ndvi.max()}, mean={ndvi.mean()}, dtype={ndvi.dtype}")
+                    ndvi_profile = profile.copy()
+                    ndvi_profile.update({'count': 1, 'dtype': 'float32', 'crs': src.crs, 'transform': src.transform})
                     output_path = self._get_output_path("indices", f"{image_set['name']}_NDVI.tif")
-                    self.rasterio_manager.safe_write(output_path, ndvi_uint16, profile)
-                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {profile.get('crs')}, Transform: {profile.get('transform')}")
+                    self.rasterio_manager.safe_write(output_path, ndvi.astype('float32'), ndvi_profile)
+                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {ndvi_profile.get('crs')}, Transform: {ndvi_profile.get('transform')}")
                     indices_paths['NDVI'] = str(output_path)
                 if vi_config.get('ndre', False):
                     ndre = self._calculate_ndre(nir, red_edge)
-                    ndre_uint16 = np.clip((ndre + 1) * 32767.5, 0, 65535).astype('uint16')
+                    self.logger.info(f"[STATS] NDRE: min={ndre.min()}, max={ndre.max()}, mean={ndre.mean()}, dtype={ndre.dtype}")
+                    ndre_profile = profile.copy()
+                    ndre_profile.update({'count': 1, 'dtype': 'float32', 'crs': src.crs, 'transform': src.transform})
                     output_path = self._get_output_path("indices", f"{image_set['name']}_NDRE.tif")
-                    self.rasterio_manager.safe_write(output_path, ndre_uint16, profile)
-                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {profile.get('crs')}, Transform: {profile.get('transform')}")
+                    self.rasterio_manager.safe_write(output_path, ndre.astype('float32'), ndre_profile)
+                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {ndre_profile.get('crs')}, Transform: {ndre_profile.get('transform')}")
                     indices_paths['NDRE'] = str(output_path)
                 if vi_config.get('gndvi', False):
                     gndvi = self._calculate_gndvi(nir, green)
-                    gndvi_uint16 = np.clip((gndvi + 1) * 32767.5, 0, 65535).astype('uint16')
+                    self.logger.info(f"[STATS] GNDVI: min={gndvi.min()}, max={gndvi.max()}, mean={gndvi.mean()}, dtype={gndvi.dtype}")
+                    gndvi_profile = profile.copy()
+                    gndvi_profile.update({'count': 1, 'dtype': 'float32', 'crs': src.crs, 'transform': src.transform})
                     output_path = self._get_output_path("indices", f"{image_set['name']}_GNDVI.tif")
-                    self.rasterio_manager.safe_write(output_path, gndvi_uint16, profile)
-                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {profile.get('crs')}, Transform: {profile.get('transform')}")
+                    self.rasterio_manager.safe_write(output_path, gndvi.astype('float32'), gndvi_profile)
+                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {gndvi_profile.get('crs')}, Transform: {gndvi_profile.get('transform')}")
                     indices_paths['GNDVI'] = str(output_path)
                 if vi_config.get('savi', False):
                     savi = self._calculate_savi(nir, red)
-                    savi_uint16 = np.clip((savi + 1) * 32767.5, 0, 65535).astype('uint16')
+                    self.logger.info(f"[STATS] SAVI: min={savi.min()}, max={savi.max()}, mean={savi.mean()}, dtype={savi.dtype}")
+                    savi_profile = profile.copy()
+                    savi_profile.update({'count': 1, 'dtype': 'float32', 'crs': src.crs, 'transform': src.transform})
                     output_path = self._get_output_path("indices", f"{image_set['name']}_SAVI.tif")
-                    self.rasterio_manager.safe_write(output_path, savi_uint16, profile)
-                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {profile.get('crs')}, Transform: {profile.get('transform')}")
+                    self.rasterio_manager.safe_write(output_path, savi.astype('float32'), savi_profile)
+                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {savi_profile.get('crs')}, Transform: {savi_profile.get('transform')}")
                     indices_paths['SAVI'] = str(output_path)
                 if vi_config.get('msavi', False):
                     msavi = self._calculate_msavi(nir, red)
-                    msavi_uint16 = np.clip((msavi + 1) * 32767.5, 0, 65535).astype('uint16')
+                    self.logger.info(f"[STATS] MSAVI: min={msavi.min()}, max={msavi.max()}, mean={msavi.mean()}, dtype={msavi.dtype}")
+                    msavi_profile = profile.copy()
+                    msavi_profile.update({'count': 1, 'dtype': 'float32', 'crs': src.crs, 'transform': src.transform})
                     output_path = self._get_output_path("indices", f"{image_set['name']}_MSAVI.tif")
-                    self.rasterio_manager.safe_write(output_path, msavi_uint16, profile)
-                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {profile.get('crs')}, Transform: {profile.get('transform')}")
+                    self.rasterio_manager.safe_write(output_path, msavi.astype('float32'), msavi_profile)
+                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {msavi_profile.get('crs')}, Transform: {msavi_profile.get('transform')}")
                     indices_paths['MSAVI'] = str(output_path)
                 if vi_config.get('evi', False):
                     evi = self._calculate_evi(nir, red, blue)
-                    evi_uint16 = np.clip((evi + 1) * 32767.5, 0, 65535).astype('uint16')
+                    self.logger.info(f"[STATS] EVI: min={evi.min()}, max={evi.max()}, mean={evi.mean()}, dtype={evi.dtype}")
+                    evi_profile = profile.copy()
+                    evi_profile.update({'count': 1, 'dtype': 'float32', 'crs': src.crs, 'transform': src.transform})
                     output_path = self._get_output_path("indices", f"{image_set['name']}_EVI.tif")
-                    self.rasterio_manager.safe_write(output_path, evi_uint16, profile)
-                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {profile.get('crs')}, Transform: {profile.get('transform')}")
+                    self.rasterio_manager.safe_write(output_path, evi.astype('float32'), evi_profile)
+                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {evi_profile.get('crs')}, Transform: {evi_profile.get('transform')}")
                     indices_paths['EVI'] = str(output_path)
                 if vi_config.get('osavi', False):
                     osavi = self._calculate_osavi(nir, red)
-                    osavi_uint16 = np.clip((osavi + 1) * 32767.5, 0, 65535).astype('uint16')
+                    self.logger.info(f"[STATS] OSAVI: min={osavi.min()}, max={osavi.max()}, mean={osavi.mean()}, dtype={osavi.dtype}")
+                    osavi_profile = profile.copy()
+                    osavi_profile.update({'count': 1, 'dtype': 'float32', 'crs': src.crs, 'transform': src.transform})
                     output_path = self._get_output_path("indices", f"{image_set['name']}_OSAVI.tif")
-                    self.rasterio_manager.safe_write(output_path, osavi_uint16, profile)
-                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {profile.get('crs')}, Transform: {profile.get('transform')}")
+                    self.rasterio_manager.safe_write(output_path, osavi.astype('float32'), osavi_profile)
+                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {osavi_profile.get('crs')}, Transform: {osavi_profile.get('transform')}")
                     indices_paths['OSAVI'] = str(output_path)
                 if vi_config.get('ndwi', False):
                     ndwi = self._calculate_ndwi(green, nir)
-                    ndwi_uint16 = np.clip((ndwi + 1) * 32767.5, 0, 65535).astype('uint16')
+                    self.logger.info(f"[STATS] NDWI: min={ndwi.min()}, max={ndwi.max()}, mean={ndwi.mean()}, dtype={ndwi.dtype}")
+                    ndwi_profile = profile.copy()
+                    ndwi_profile.update({'count': 1, 'dtype': 'float32', 'crs': src.crs, 'transform': src.transform})
                     output_path = self._get_output_path("indices", f"{image_set['name']}_NDWI.tif")
-                    self.rasterio_manager.safe_write(output_path, ndwi_uint16, profile)
-                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {profile.get('crs')}, Transform: {profile.get('transform')}")
+                    self.rasterio_manager.safe_write(output_path, ndwi.astype('float32'), ndwi_profile)
+                    self.logger.info(f"[DEBUG] Index output: {output_path}, CRS: {ndwi_profile.get('crs')}, Transform: {ndwi_profile.get('transform')}")
                     indices_paths['NDWI'] = str(output_path)
                 self.logger.info(f"Calculated {len(indices_paths)} vegetation indices for {image_set['name']}")
         except Exception as e:
@@ -600,13 +620,92 @@ class MicaSenseProcessor:
     def _save_metadata(self, metadata: Dict):
         """Save metadata for an image set"""
         try:
+            # Get image statistics and quality metrics
+            quality_metrics = {}
+            band_stats = {}
+            
+            for band_num, band_path in metadata['image_set']['bands'].items():
+                with self.rasterio_manager.safe_open(Path(band_path)) as src:
+                    stats = self.rasterio_manager.get_statistics(src)
+                    band_stats[band_num] = {
+                        "name": self.config['band_config'][band_num]["name"],
+                        "wavelength": self.config['band_config'][band_num]["wavelength"],
+                        "description": self.config['band_config'][band_num]["description"],
+                        "path": band_path,
+                        "statistics": stats
+                    }
+            
+            # Calculate quality metrics
+            quality_metrics = {
+                "band_alignment": "success" if all(band_stats[b]["statistics"]["dimensions"] == band_stats["1"]["statistics"]["dimensions"] for b in band_stats) else "failed",
+                "reflectance_range": "valid" if all(0 <= stats["min"] <= stats["max"] <= 65535 for stats in [b["statistics"] for b in band_stats.values()]) else "invalid",
+                "zero_ratio": max(b["statistics"]["zero_ratio"] for b in band_stats.values()),
+                "data_range": "valid" if all(0 <= stats["min"] <= stats["max"] <= 65535 for stats in [b["statistics"] for b in band_stats.values()]) else "invalid",
+                "metadata_completeness": "complete" if all(b["statistics"]["metadata"] for b in band_stats.values()) else "incomplete"
+            }
+            
+            # Create enhanced metadata structure
+            enhanced_metadata = {
+                "image_set": {
+                    "name": metadata['image_set']['name'],
+                    "timestamp": metadata['image_set'].get('timestamp', datetime.now().isoformat()),
+                    "bands": band_stats
+                },
+                "gps_info": metadata.get('gps_info', {}),
+                "camera_info": {
+                    "model": self.config['camera_params']['model'],
+                    "manufacturer": self.config['camera_params']['manufacturer'],
+                    "focal_length": self.config['camera_params']['focal_length'],
+                    "sensor_width": self.config['camera_params']['sensor_width'],
+                    "sensor_height": self.config['camera_params']['sensor_height'],
+                    "pixel_size": self.config['camera_params']['pixel_size'],
+                    "bands": self.config['camera_info']['bands'],
+                    "gps_datum": self.config['camera_info']['gps_datum'],
+                    "band_order": self.config['camera_info']['band_order']
+                },
+                "processing": {
+                    "timestamp": metadata.get('processing_timestamp', datetime.now().isoformat()),
+                    "config": {
+                        "quality_control": self.config['quality_control'],
+                        "vegetation_indices": self.config['vegetation_indices']
+                    },
+                    "statistics": {
+                        "dimensions": band_stats["1"]["statistics"]["dimensions"],
+                        "ground_sample_distance": {
+                            "x": band_stats["1"]["statistics"].get("gsd_x", 0),
+                            "y": band_stats["1"]["statistics"].get("gsd_y", 0)
+                        },
+                        "surface_area": band_stats["1"]["statistics"].get("surface_area", 0)
+                    }
+                },
+                "quality_metrics": quality_metrics,
+                "outputs": {
+                    "aligned_image": str(self._get_output_path("aligned", f"{metadata['image_set']['name']}_aligned.tif")),
+                    "calibrated_image": str(self._get_output_path("calibrated", f"{metadata['image_set']['name']}_calibrated.tif")),
+                    "indices": {
+                        index: str(self._get_output_path("indices", f"{metadata['image_set']['name']}_{index}.tif"))
+                        for index in self.config['vegetation_indices']
+                        if self.config['vegetation_indices'][index]
+                    },
+                    "thumbnails": {
+                        "rgb": str(self._get_output_path("thumbnails", f"{metadata['image_set']['name']}_RGB.jpg")),
+                        "ndvi": str(self._get_output_path("thumbnails", f"{metadata['image_set']['name']}_NDVI.jpg"))
+                    },
+                    "visualizations": {
+                        "ndvi_map": str(self._get_output_path("visualizations/maps", f"{metadata['image_set']['name']}_NDVI_map.png")),
+                        "ndvi_chart": str(self._get_output_path("visualizations/charts", f"{metadata['image_set']['name']}_NDVI_chart.png"))
+                    }
+                }
+            }
+            
             # Save metadata
             metadata_path = self._get_output_path("metadata", f"{metadata['image_set']['name']}_metadata.json")
             with open(metadata_path, 'w') as f:
-                json.dump(metadata, f, indent=2)
+                json.dump(enhanced_metadata, f, indent=2)
                 
         except Exception as e:
             self.logger.error(f"Failed to save metadata for {metadata['image_set']['name']}: {str(e)}")
+            self.logger.error(traceback.format_exc())
     
     def find_image_sets(self, input_dir: Path) -> List[Dict]:
         """Find complete sets of MicaSense images in the input directory"""
