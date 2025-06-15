@@ -456,3 +456,39 @@ For issues or questions:
 ---
 
 **Note**: This deployment setup is designed for both development and production use. For production, ensure you review and customize the security, backup, and monitoring configurations for your specific environment.
+
+## 🛰️ Band Usage for Vegetation Indices
+
+The pipeline expects MicaSense RedEdge-M band order:
+- Band 1: Blue (475nm)
+- Band 2: Green (560nm)
+- Band 3: Red (668nm)
+- Band 4: NIR (840nm)
+- Band 5: Red Edge (717nm)
+
+**Vegetation Indices Calculations:**
+- NDVI: NIR (4), Red (3)
+- NDRE: NIR (4), Red Edge (5)
+- GNDVI: NIR (4), Green (2)
+- SAVI: NIR (4), Red (3)
+- MSAVI: NIR (4), Red (3)
+- EVI: NIR (4), Red (3), Blue (1)
+- OSAVI: NIR (4), Red (3)
+- NDWI: Green (2), NIR (4)
+
+All 5 bands are used in the pipeline's index calculations.
+
+## 📊 Validation Report (Automated)
+
+After each run, the pipeline generates a comprehensive validation report in `data/output/micasense/quality_reports/`:
+- Basic statistics (min, max, mean, median, std, percentiles)
+- Histogram images and bin counts
+- Key value range percentages (e.g., NDVI classes)
+- NoData/invalid pixel counts
+- Outlier detection
+- Spatial consistency checks (CRS, transform, shape)
+- Thumbnails for each index
+- Summary CSV/JSON tables
+- (If applicable) Temporal and reference checks
+
+See `validation_report.json` and `validation_report.csv` for details.
