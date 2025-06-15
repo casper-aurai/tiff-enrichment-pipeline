@@ -14,6 +14,8 @@ from datetime import datetime
 import re
 import subprocess
 import math
+import matplotlib.pyplot as plt
+import pandas as pd
 
 from .errors import ValidationError
 
@@ -365,4 +367,106 @@ class MicaSenseValidator:
             return False
         except Exception as e:
             self.logger.error(f"Unexpected error during configuration validation: {str(e)}")
-            return False 
+            return False
+
+    def generate_indices_report(self, indices_dir: Path, output_dir: Path, reference_data: Path = None):
+        """Generate a comprehensive validation report for all index files in a directory."""
+        report = []
+        spatial_info = {}
+        summary_rows = []
+        indices_dir = Path(indices_dir)
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for tif in indices_dir.glob("*.tif"):
+            entry = {'file': str(tif)}
+            try:
+                with rasterio.open(tif) as src:
+                    data = src.read(1)
+                    # Basic stats
+                    entry['min'] = float(np.nanmin(data))
+                    entry['max'] = float(np.nanmax(data))
+                    entry['mean'] = float(np.nanmean(data))
+                    entry['median'] = float(np.nanmedian(data))
+                    entry['std'] = float(np.nanstd(data))
+                    entry['p5'] = float(np.nanpercentile(data, 5))
+                    entry['p25'] = float(np.nanpercentile(data, 25))
+                    entry['p75'] = float(np.nanpercentile(data, 75))
+                    entry['p95'] = float(np.nanpercentile(data, 95))
+                    # Histogram
+                    hist, bins = np.histogram(data[~np.isnan(data)], bins=50)
+                    entry['histogram_bins'] = bins.tolist()
+                    entry['histogram_counts'] = hist.tolist()
+                    plt.figure()
+                    plt.hist(data[~np.isnan(data)].flatten(), bins=50)
+                    plt.title(f"Histogram: {tif.name}")
+                    plt.xlabel("Value")
+                    plt.ylabel("Count")
+                    hist_path = output_dir / f"{tif.stem}_hist.png"
+                    plt.savefig(hist_path)
+                    plt.close()
+                    entry['histogram_image'] = str(hist_path)
+                    # Key value ranges (NDVI example)
+                    if 'NDVI' in tif.name.upper():
+                        entry['pct_lt0'] = float(np.mean(data < 0) * 100)
+                        entry['pct_0_02'] = float(np.mean((data >= 0) & (data < 0.2)) * 100)
+                        entry['pct_02_05'] = float(np.mean((data >= 0.2) & (data < 0.5)) * 100)
+                        entry['pct_gt05'] = float(np.mean(data >= 0.5) * 100)
+                    # NoData/invalid
+                    entry['pct_nan'] = float(np.mean(np.isnan(data)) * 100)
+                    entry['pct_nodata'] = float(np.mean(data == src.nodata) * 100) if src.nodata is not None else 0.0
+                    entry['pct_neg9999'] = float(np.mean(data == -9999) * 100)
+                    # Outlier detection
+                    entry['out_of_range'] = bool((data > 1).any() or (data < -1).any())
+                    # Spatial info
+                    entry['crs'] = str(src.crs)
+                    entry['transform'] = str(src.transform)
+                    entry['shape'] = (src.height, src.width)
+                    spatial_info[tif.name] = (src.crs, src.transform, src.height, src.width)
+                    # Thumbnail
+                    from matplotlib import cm
+                    plt.figure(figsize=(2,2))
+                    plt.imshow(data, cmap=cm.viridis)
+                    plt.axis('off')
+                    thumb_path = output_dir / f"{tif.stem}_thumb.png"
+                    plt.savefig(thumb_path, bbox_inches='tight', pad_inches=0)
+                    plt.close()
+                    entry['thumbnail'] = str(thumb_path)
+                    # Temporal (if date in filename)
+                    import re
+                    m = re.search(r'(\d{8})', tif.name)
+                    if m:
+                        entry['date'] = m.group(1)
+                    # Reference comparison (if provided)
+                    if reference_data:
+                        # Not implemented: placeholder for future
+                        entry['reference_comparison'] = 'TODO'
+                report.append(entry)
+                summary_rows.append(entry)
+            except Exception as e:
+                entry['error'] = str(e)
+                report.append(entry)
+        # Spatial consistency check
+        crs_set = set(str(v[0]) for v in spatial_info.values())
+        transform_set = set(str(v[1]) for v in spatial_info.values())
+        shape_set = set(v[2:] for v in spatial_info.values())
+        spatial_summary = {
+            'unique_crs': list(crs_set),
+            'unique_transforms': list(transform_set),
+            'unique_shapes': list(shape_set),
+            'crs_consistent': len(crs_set) == 1,
+            'transform_consistent': len(transform_set) == 1,
+            'shape_consistent': len(shape_set) == 1
+        }
+        # Save JSON report
+        import json
+        report_path = output_dir / 'validation_report.json'
+        with open(report_path, 'w') as f:
+            json.dump({'indices': report, 'spatial_summary': spatial_summary}, f, indent=2)
+        # Save CSV summary
+        df = pd.DataFrame(summary_rows)
+        csv_path = output_dir / 'validation_report.csv'
+        df.to_csv(csv_path, index=False)
+        # Log summary
+        self.logger.info(f"Validation report saved: {report_path}")
+        self.logger.info(f"Validation summary CSV saved: {csv_path}")
+        self.logger.info(f"Spatial summary: {spatial_summary}") 
