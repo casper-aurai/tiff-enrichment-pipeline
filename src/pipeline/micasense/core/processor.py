@@ -779,4 +779,8 @@ class MicaSenseProcessor:
                 results.append({'name': image_set['name'], 'status': 'failed', 'error': str(e)})
         # Cleanup legacy outputs before validation
         self.cleanup_legacy_outputs()
+        # Generate comprehensive validation report for indices
+        indices_dir = self.output_dir / 'indices'
+        report_dir = self.output_dir / 'quality_reports'
+        self.validator.generate_indices_report(indices_dir, report_dir)
         return results 
