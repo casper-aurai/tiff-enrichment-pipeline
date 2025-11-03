@@ -60,7 +60,7 @@ aiohttp==3.8.5
 dask[complete]>=2023.7.0
 celery>=5.3.0
 pandas==2.0.3
-numpy==1.24.3
+numpy==2.0.2
 
 # Security Tools
 cryptography==41.0.3
